@@ -1,0 +1,6 @@
+.env
+node_modules/
+.import/
+.godot/
+.DS_Store
+*.tmp

@@ -1,0 +1,12 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/Enemy.gd" id="1_enemy_script"]
+
+[sub_resource type="CircleShape2D" id="1_enemy_shape"]
+radius = 18.0
+
+[node name="Enemy" type="Area2D"]
+script = ExtResource("1_enemy_script")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("1_enemy_shape")
