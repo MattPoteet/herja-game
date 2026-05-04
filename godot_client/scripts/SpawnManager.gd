@@ -24,7 +24,10 @@ func spawn_enemy() -> void:
 		return
 	var enemy = enemy_scene.instantiate()
 	enemy.global_position = _random_spawn_position()
-	enemy.init(Balance.random_enemy_name(), player)
+	var player_level: int = 1
+	if player.get("stats") is Dictionary:
+		player_level = int((player.get("stats") as Dictionary).get("level", 1))
+	enemy.init(Balance.random_enemy_name_for_level(player_level), player)
 	enemy.defeated.connect(_on_enemy_defeated)
 	get_tree().current_scene.add_child(enemy)
 

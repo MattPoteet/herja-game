@@ -334,6 +334,8 @@ const GEAR_ITEMS: Dictionary = {
 const ENEMY_STATS: Dictionary = {
 	"Wild Wisp": {
 		"weight": 48,
+		"min_level": 1,
+		"max_level": 4,
 		"hp": 24,
 		"attack": 3,
 		"xp": 18,
@@ -349,6 +351,8 @@ const ENEMY_STATS: Dictionary = {
 	},
 	"Forest Imp": {
 		"weight": 34,
+		"min_level": 1,
+		"max_level": 6,
 		"hp": 40,
 		"attack": 6,
 		"xp": 34,
@@ -364,6 +368,8 @@ const ENEMY_STATS: Dictionary = {
 	},
 	"Stone Boar": {
 		"weight": 18,
+		"min_level": 2,
+		"max_level": 8,
 		"hp": 64,
 		"attack": 10,
 		"xp": 55,
@@ -376,6 +382,57 @@ const ENEMY_STATS: Dictionary = {
 		"lunge_distance": 20.0,
 		"gear_chance": 0.16,
 		"loot": ["Bone Charm", "Iron Ore", "Small Gem", "Stone", "Rune Dust", "Crystal Vial", ""]
+	},
+	"Draugr Warrior": {
+		"weight": 28,
+		"min_level": 3,
+		"max_level": 12,
+		"hp": 92,
+		"attack": 15,
+		"xp": 86,
+		"gold": 18,
+		"move_speed": 44.0,
+		"chase_range": 260.0,
+		"attack_range": 48.0,
+		"preferred_range": 42.0,
+		"attack_cooldown": 1.55,
+		"lunge_distance": 18.0,
+		"gear_chance": 0.22,
+		"loot": ["Iron Ore", "Bone Charm", "Runed Brooch", "Rune Dust", "Small Gem", ""]
+	},
+	"Frost Troll": {
+		"weight": 18,
+		"min_level": 5,
+		"max_level": 18,
+		"hp": 155,
+		"attack": 22,
+		"xp": 145,
+		"gold": 32,
+		"move_speed": 34.0,
+		"chase_range": 250.0,
+		"attack_range": 56.0,
+		"preferred_range": 50.0,
+		"attack_cooldown": 2.1,
+		"lunge_distance": 26.0,
+		"gear_chance": 0.28,
+		"loot": ["Fur", "Iron Ore", "Crystal Vial", "Small Gem", "Rune Dust", "Runed Brooch", ""]
+	},
+	"Rune Golem": {
+		"weight": 12,
+		"min_level": 8,
+		"max_level": 99,
+		"hp": 240,
+		"attack": 32,
+		"xp": 240,
+		"gold": 55,
+		"move_speed": 28.0,
+		"chase_range": 230.0,
+		"attack_range": 62.0,
+		"preferred_range": 56.0,
+		"attack_cooldown": 2.45,
+		"lunge_distance": 18.0,
+		"gear_chance": 0.36,
+		"loot": ["Runed Brooch", "Small Gem", "Rune Dust", "Crystal Vial", "Iron Ore", ""]
 	}
 }
 
@@ -561,18 +618,33 @@ static func enemy_data(enemy_name: String) -> Dictionary:
 
 
 static func random_enemy_name() -> String:
+	return random_enemy_name_for_level(1)
+
+
+static func random_enemy_name_for_level(player_level: int) -> String:
+	var level: int = max(1, player_level)
 	var total_weight: int = 0
 	for enemy_name in ENEMY_STATS.keys():
 		var data: Dictionary = ENEMY_STATS[enemy_name] as Dictionary
+		if not _enemy_available_for_level(data, level):
+			continue
 		total_weight += int(data.get("weight", 1))
 	var roll: int = randi_range(1, max(1, total_weight))
 	var running: int = 0
 	for enemy_name in ENEMY_STATS.keys():
 		var data: Dictionary = ENEMY_STATS[enemy_name] as Dictionary
+		if not _enemy_available_for_level(data, level):
+			continue
 		running += int(data.get("weight", 1))
 		if roll <= running:
 			return str(enemy_name)
 	return "Wild Wisp"
+
+
+static func _enemy_available_for_level(data: Dictionary, player_level: int) -> bool:
+	var min_level: int = int(data.get("min_level", 1))
+	var max_level: int = int(data.get("max_level", 99))
+	return player_level >= min_level and player_level <= max_level
 
 
 static func _class_display(character_id: String) -> String:

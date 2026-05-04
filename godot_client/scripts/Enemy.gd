@@ -15,6 +15,24 @@ const ENEMY_ROW_OFFSETS: Dictionary = {
 	"Stone Boar": 8
 }
 
+const ENEMY_TEXTURE_PATHS: Dictionary = {
+	"Wild Wisp": "res://art/enemies/generated/wild_wisp.png",
+	"Forest Imp": "res://art/enemies/generated/forest_imp.png",
+	"Stone Boar": "res://art/enemies/generated/stone_boar.png",
+	"Draugr Warrior": "res://art/enemies/generated/draugr_warrior.png",
+	"Frost Troll": "res://art/enemies/generated/frost_troll.png",
+	"Rune Golem": "res://art/enemies/generated/rune_golem.png"
+}
+
+const ENEMY_VISUAL_SCALES: Dictionary = {
+	"Wild Wisp": 0.34,
+	"Forest Imp": 0.32,
+	"Stone Boar": 0.35,
+	"Draugr Warrior": 0.34,
+	"Frost Troll": 0.42,
+	"Rune Golem": 0.40
+}
+
 var enemy_name: String = "Wild Wisp"
 var hp: int = 30
 var max_hp: int = 30
@@ -192,6 +210,7 @@ func _setup_enemy_visuals() -> void:
 	animated_sprite.centered = true
 	animated_sprite.position = Vector2(0, -6)
 	animated_sprite.z_index = 8
+	animated_sprite.scale = Vector2.ONE * _visual_scale()
 	animated_sprite.sprite_frames = _build_enemy_sprite_frames()
 	animated_sprite.play("idle_down")
 
@@ -285,6 +304,10 @@ func _build_enemy_sprite_frames() -> SpriteFrames:
 	if frames.has_animation("default"):
 		frames.remove_animation("default")
 
+	var generated_frames: SpriteFrames = _build_generated_enemy_frames()
+	if generated_frames != null:
+		return generated_frames
+
 	if not ResourceLoader.exists(ENEMY_SHEET_PATH):
 		return frames
 
@@ -323,6 +346,43 @@ func _build_enemy_sprite_frames() -> SpriteFrames:
 			frames.add_frame(walk_name, atlas)
 
 	return frames
+
+
+func _build_generated_enemy_frames() -> SpriteFrames:
+	var texture_path: String = str(ENEMY_TEXTURE_PATHS.get(enemy_name, ""))
+	if texture_path == "":
+		return null
+	var texture: Texture2D = load(texture_path) as Texture2D
+	if texture == null:
+		push_warning("Enemy texture could not load for %s: %s" % [enemy_name, texture_path])
+		return null
+
+	var frames: SpriteFrames = SpriteFrames.new()
+	if frames.has_animation("default"):
+		frames.remove_animation("default")
+
+	var directions: Array[String] = ["down", "left", "right", "up"]
+	for direction in directions:
+		var idle_name: String = "idle_" + direction
+		var walk_name: String = "walk_" + direction
+		frames.add_animation(idle_name)
+		frames.set_animation_loop(idle_name, true)
+		frames.set_animation_speed(idle_name, 1.0)
+		frames.add_frame(idle_name, texture)
+
+		frames.add_animation(walk_name)
+		frames.set_animation_loop(walk_name, true)
+		frames.set_animation_speed(walk_name, 4.0)
+		frames.add_frame(walk_name, texture)
+		frames.add_frame(walk_name, texture)
+
+	return frames
+
+
+func _visual_scale() -> float:
+	if ENEMY_TEXTURE_PATHS.has(enemy_name):
+		return float(ENEMY_VISUAL_SCALES.get(enemy_name, 0.35))
+	return 1.0
 
 
 func _update_facing_direction(direction: Vector2) -> void:
