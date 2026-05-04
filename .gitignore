@@ -10,3 +10,12 @@ web/
 WebBuild/
 godot_client/index.apk
 godot_client/index.apk.idsig
+godot_client/index.apple-touch-icon.png
+godot_client/index.audio.position.worklet.js
+godot_client/index.audio.worklet.js
+godot_client/index.html
+godot_client/index.icon.png
+godot_client/index.js
+godot_client/index.pck
+godot_client/index.png
+godot_client/index.wasm
