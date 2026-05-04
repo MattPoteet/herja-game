@@ -3,6 +3,7 @@ extends Area2D
 signal defeated(enemy: Node)
 
 const Balance = preload("res://scripts/Balance.gd")
+const DungeonConfig = preload("res://scripts/DungeonConfig.gd")
 const ENEMY_SHEET_PATH: String = "res://art/enemies/enemies.png"
 const ITEM_DROP_SCENE_PATH: String = "res://scenes/ItemDrop.tscn"
 const FRAME_SIZE: int = 64
@@ -34,6 +35,7 @@ const ENEMY_VISUAL_SCALES: Dictionary = {
 }
 
 var enemy_name: String = "Wild Wisp"
+var display_name: String = ""
 var hp: int = 30
 var max_hp: int = 30
 var attack: int = 5
@@ -64,6 +66,7 @@ func _ready() -> void:
 
 func init(spawn_name: String, player: Node2D) -> void:
 	enemy_name = spawn_name
+	display_name = ""
 	target = player
 
 	var data: Dictionary = Balance.enemy_data(enemy_name)
@@ -130,17 +133,55 @@ func take_damage(amount: int) -> void:
 			if target.get("stats") is Dictionary:
 				target_level = int((target.get("stats") as Dictionary).get("level", 1))
 			target_character = str(target.get("character_id"))
-		var loot: String = Balance.random_enemy_loot(enemy_name, target_level, target_character)
+		var is_dungeon_boss: bool = bool(get_meta("dungeon_boss", false))
+		var loot: String = _roll_loot(target_level, target_character)
 
-		if target != null and target.has_method("gain_reward"):
+		if not is_dungeon_boss and target != null and target.has_method("gain_reward"):
 			target.call("gain_reward", xp_reward, gold_reward, "")
 			_show_floating_text("+%d XP  +%d gold" % [xp_reward, gold_reward], Color(0.84, 1.0, 0.52), Vector2(0, -72))
 
-		if loot != "":
+		if not is_dungeon_boss and loot != "":
 			_spawn_item_drop(loot)
 
 		defeated.emit(self)
 		queue_free()
+
+
+func apply_dungeon_scaling(required_level: int, is_boss: bool = false) -> void:
+	var tier: int = max(DungeonConfig.MIN_DUNGEON_LEVEL, required_level)
+	var level_factor: float = max(1.0, float(tier) / 10.0)
+	var health_multiplier: float = DungeonConfig.DUNGEON_ENEMY_HEALTH_MULTIPLIER
+	var attack_multiplier: float = DungeonConfig.DUNGEON_ENEMY_ATTACK_MULTIPLIER
+	var xp_multiplier: float = DungeonConfig.DUNGEON_ENEMY_XP_MULTIPLIER
+	var gold_multiplier: float = DungeonConfig.DUNGEON_ENEMY_GOLD_MULTIPLIER
+	if is_boss:
+		health_multiplier *= DungeonConfig.BOSS_HEALTH_MULTIPLIER
+		attack_multiplier *= DungeonConfig.BOSS_ATTACK_MULTIPLIER
+		xp_multiplier *= DungeonConfig.BOSS_XP_MULTIPLIER
+		gold_multiplier *= DungeonConfig.BOSS_GOLD_MULTIPLIER
+		set_meta("dungeon_boss", true)
+		display_name = "Dungeon Boss"
+		scale = Vector2(1.35, 1.35)
+	else:
+		display_name = "Dungeon %s" % enemy_name
+	hp = int(round((float(hp) + level_factor * 18.0) * health_multiplier))
+	max_hp = hp
+	attack = int(round((float(attack) + level_factor * 2.0) * attack_multiplier))
+	xp_reward = int(round(float(xp_reward + tier * 3) * xp_multiplier))
+	gold_reward = int(round(float(gold_reward + tier) * gold_multiplier))
+	chase_range += 30.0
+	attack_range += 4.0
+	preferred_range += 4.0
+	_setup_enemy_visuals()
+
+
+func _roll_loot(target_level: int, target_character: String) -> String:
+	if bool(get_meta("dungeon_enemy", false)) and not bool(get_meta("dungeon_boss", false)):
+		if randf() <= DungeonConfig.DUNGEON_ENEMY_BONUS_GEAR_CHANCE:
+			var gear: String = Balance.random_gear_for_level(max(target_level, DungeonConfig.MIN_DUNGEON_LEVEL), target_character)
+			if gear != "":
+				return gear
+	return Balance.random_enemy_loot(enemy_name, target_level, target_character)
 
 
 func _attack_target() -> void:
@@ -220,7 +261,7 @@ func _setup_enemy_visuals() -> void:
 		name_label.name = "NameLabel"
 		add_child(name_label)
 
-	name_label.text = enemy_name
+	name_label.text = display_name if display_name != "" else enemy_name
 	name_label.position = Vector2(-36, -48)
 	name_label.z_index = 12
 
@@ -424,6 +465,8 @@ func _play_sprite_animation(anim_name: String) -> void:
 
 func _spawn_item_drop(item_name: String) -> void:
 	var drop: Node = item_drop_scene.instantiate()
+	if bool(get_meta("dungeon_enemy", false)):
+		drop.set_meta("dungeon_drop", true)
 
 	if drop is Node2D:
 		var drop_node: Node2D = drop as Node2D

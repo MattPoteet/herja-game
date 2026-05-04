@@ -107,6 +107,8 @@ func attack_nearest_enemy() -> void:
 		if not enemy is Node2D:
 			continue
 		var enemy_node: Node2D = enemy as Node2D
+		if not enemy_node.visible:
+			continue
 		var distance: float = global_position.distance_to(enemy_node.global_position)
 		if distance < closest_distance:
 			closest_distance = distance

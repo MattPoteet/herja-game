@@ -10,6 +10,8 @@ const RemotePlayerScript: Script = preload("res://scripts/RemotePlayer.gd")
 const MobileControlsScript: Script = preload("res://scripts/MobileControls.gd")
 const ChatPanelScript: Script = preload("res://scripts/ChatPanel.gd")
 const AdManagerScript: Script = preload("res://scripts/AdManager.gd")
+const DungeonSpawnerScript: Script = preload("res://scripts/DungeonSpawner.gd")
+const DungeonManagerScript: Script = preload("res://scripts/DungeonManager.gd")
 
 @onready var player: CharacterBody2D = $Player
 @onready var world_map: Node2D = $WorldMap
@@ -28,6 +30,8 @@ var remote_players: Dictionary = {}
 var mobile_controls: CanvasLayer
 var chat_panel: CanvasLayer
 var ad_manager: CanvasLayer
+var dungeon_spawner: Node2D
+var dungeon_manager: Node
 var ad_break_active: bool = false
 var game_started: bool = false
 var autosave_timer: float = 0.0
@@ -55,6 +59,8 @@ func _process(delta: float) -> void:
 		return
 	if ad_break_active:
 		return
+	if dungeon_manager != null and dungeon_manager.has_method("apply_player_bounds"):
+		dungeon_manager.call("apply_player_bounds")
 
 	if Input.is_action_just_pressed("manual_save"):
 		_save_now("Manual save complete.")
@@ -77,7 +83,12 @@ func _process(delta: float) -> void:
 	if Input.is_action_just_pressed("multiplayer_chat") and chat_panel != null:
 		chat_panel.call("focus_chat")
 
-	if Input.is_action_just_pressed("interact") and building_manager != null and building_manager.has_method("use_nearest_structure"):
+	var dungeon_active: bool = dungeon_manager != null and dungeon_manager.has_method("is_dungeon_active") and bool(dungeon_manager.call("is_dungeon_active"))
+	if not dungeon_active and Input.is_action_just_pressed("interact") and dungeon_spawner != null and dungeon_spawner.has_method("try_enter_nearest"):
+		if bool(dungeon_spawner.call("try_enter_nearest")):
+			return
+
+	if not dungeon_active and Input.is_action_just_pressed("interact") and building_manager != null and building_manager.has_method("use_nearest_structure"):
 		building_manager.call("use_nearest_structure")
 
 	autosave_timer += delta
@@ -151,6 +162,18 @@ func _start_game(account: Dictionary) -> void:
 	if world_map.has_signal("section_loading_finished"):
 		world_map.section_loading_finished.connect(_on_section_loading_finished)
 
+	dungeon_manager = DungeonManagerScript.new()
+	dungeon_manager.name = "DungeonManager"
+	add_child(dungeon_manager)
+	dungeon_manager.call("setup", player, world_map, spawn_manager, hud)
+
+	dungeon_spawner = DungeonSpawnerScript.new()
+	dungeon_spawner.name = "DungeonSpawner"
+	add_child(dungeon_spawner)
+	dungeon_spawner.call("setup", world_map, player, hud)
+	if dungeon_spawner.has_signal("dungeon_enter_requested"):
+		dungeon_spawner.connect("dungeon_enter_requested", Callable(self, "_on_dungeon_enter_requested"))
+
 	building_manager = BuildingManagerScript.new()
 	building_manager.name = "BuildingManager"
 	add_child(building_manager)
@@ -199,7 +222,16 @@ func _start_game(account: Dictionary) -> void:
 func _save_now(message: String) -> void:
 	if save_manager == null or player == null:
 		return
+	var original_position: Vector2 = player.global_position
+	var restore_position_after_save: bool = false
+	if dungeon_manager != null and dungeon_manager.has_method("is_dungeon_active") and bool(dungeon_manager.call("is_dungeon_active")):
+		var dungeon_return_position: Variant = dungeon_manager.get("return_position")
+		if dungeon_return_position is Vector2:
+			player.global_position = dungeon_return_position
+			restore_position_after_save = true
 	var ok: bool = bool(save_manager.call("save_player", player, world_map, account_manager))
+	if restore_position_after_save:
+		player.global_position = original_position
 	if hud != null and hud.has_method("set_status") and message != "":
 		if ok:
 			hud.call("set_status", message)
@@ -308,6 +340,8 @@ func _on_section_loading_started(_section: Vector2i) -> void:
 func _on_section_loading_finished(_section: Vector2i) -> void:
 	if ad_break_active:
 		_set_gameplay_paused_for_ad(true)
+	if dungeon_spawner != null and dungeon_spawner.has_method("refresh_around_player"):
+		dungeon_spawner.call("refresh_around_player")
 
 
 func _start_ad_break_deferred() -> void:
@@ -421,6 +455,16 @@ func _handle_world_tap(screen_position: Vector2) -> void:
 	if player == null:
 		return
 	var world_position: Vector2 = get_viewport().get_canvas_transform().affine_inverse() * screen_position
+	var dungeon_active: bool = dungeon_manager != null and dungeon_manager.has_method("is_dungeon_active") and bool(dungeon_manager.call("is_dungeon_active"))
+	if dungeon_active:
+		if dungeon_manager.has_method("handle_world_tap") and bool(dungeon_manager.call("handle_world_tap", world_position)):
+			return
+	if not dungeon_active and dungeon_spawner != null and dungeon_spawner.has_method("dungeon_at_world_position"):
+		var entrance: Node2D = dungeon_spawner.call("dungeon_at_world_position", world_position) as Node2D
+		if entrance != null:
+			if dungeon_spawner.has_method("try_enter_entrance"):
+				dungeon_spawner.call("try_enter_entrance", entrance)
+			return
 	var tapped_enemy: Node2D = _enemy_at_world_position(world_position)
 	if tapped_enemy != null and player.has_method("set_attack_target"):
 		player.call("set_attack_target", tapped_enemy)
@@ -431,6 +475,11 @@ func _handle_world_tap(screen_position: Vector2) -> void:
 		player.call("set_move_target", world_position)
 		if hud != null and hud.has_method("set_status"):
 			hud.call("set_status", "Moving to tap.")
+
+
+func _on_dungeon_enter_requested(required_level: int, entrance_position: Vector2) -> void:
+	if dungeon_manager != null and dungeon_manager.has_method("enter_dungeon"):
+		dungeon_manager.call("enter_dungeon", required_level, entrance_position)
 
 
 func _is_touch_over_mobile_controls(screen_position: Vector2) -> bool:
@@ -448,6 +497,8 @@ func _enemy_at_world_position(world_position: Vector2) -> Node2D:
 		if not is_instance_valid(enemy) or not enemy is Node2D:
 			continue
 		var enemy_node: Node2D = enemy as Node2D
+		if not enemy_node.visible:
+			continue
 		var distance: float = enemy_node.global_position.distance_to(world_position)
 		if distance <= nearest_distance:
 			nearest_distance = distance
@@ -507,6 +558,7 @@ func _ensure_global_input_actions() -> void:
 	_add_key_action("build_menu", [KEY_B])
 	_add_key_action("craft_menu", [KEY_C])
 	_add_key_action("multiplayer_chat", [KEY_ENTER, KEY_T])
+	_add_key_action("interact", [KEY_E, KEY_SPACE])
 
 
 func _add_key_action(action_name: String, keys: Array) -> void:

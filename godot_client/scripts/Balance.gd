@@ -79,6 +79,26 @@ const GEAR_ITEMS: Dictionary = {
 		"defense": 1,
 		"description": "A gold-inlaid axe carrying old saga power."
 	},
+	"Rare Viking Sword": {
+		"slot": "weapon",
+		"class": "viking",
+		"rarity": "rare",
+		"level": 10,
+		"icon": 1,
+		"attack": 16,
+		"defense": 1,
+		"description": "A dungeon-forged sword balanced for close Viking fights."
+	},
+	"Legendary Viking Sword": {
+		"slot": "weapon",
+		"class": "viking",
+		"rarity": "legendary",
+		"level": 20,
+		"icon": 2,
+		"attack": 28,
+		"defense": 3,
+		"description": "A saga blade recovered from a boss hoard."
+	},
 	"Common Shield Maiden Bow": {
 		"slot": "weapon",
 		"class": "shield_maiden",
@@ -108,6 +128,26 @@ const GEAR_ITEMS: Dictionary = {
 		"attack": 10,
 		"defense": 2,
 		"description": "An ornate bow built for long-range legends."
+	},
+	"Rare Shield Maiden Spear": {
+		"slot": "weapon",
+		"class": "shield_maiden",
+		"rarity": "rare",
+		"level": 10,
+		"icon": 4,
+		"attack": 13,
+		"defense": 3,
+		"description": "A guarded spear for shield maiden dungeon runs."
+	},
+	"Legendary Shield Maiden Spear": {
+		"slot": "weapon",
+		"class": "shield_maiden",
+		"rarity": "legendary",
+		"level": 20,
+		"icon": 5,
+		"attack": 24,
+		"defense": 6,
+		"description": "A boss-forged spear with shield runes along the haft."
 	},
 	"Common Druid Staff": {
 		"slot": "weapon",
@@ -139,6 +179,26 @@ const GEAR_ITEMS: Dictionary = {
 		"defense": 4,
 		"description": "A golden elder staff wrapped in rune vines."
 	},
+	"Rare Druid Spear": {
+		"slot": "weapon",
+		"class": "druid",
+		"rarity": "rare",
+		"level": 10,
+		"icon": 7,
+		"attack": 13,
+		"defense": 4,
+		"description": "A greenwood spear carved with stag-bone charms."
+	},
+	"Legendary Druid Spear": {
+		"slot": "weapon",
+		"class": "druid",
+		"rarity": "legendary",
+		"level": 20,
+		"icon": 8,
+		"attack": 24,
+		"defense": 8,
+		"description": "An elder spear carrying deep forest magic."
+	},
 	"Common Mage Wand": {
 		"slot": "weapon",
 		"class": "mage",
@@ -168,6 +228,26 @@ const GEAR_ITEMS: Dictionary = {
 		"attack": 12,
 		"defense": 1,
 		"description": "A jewel-headed wand burning with arcane force."
+	},
+	"Rare Mage Fire Staff": {
+		"slot": "weapon",
+		"class": "mage",
+		"rarity": "rare",
+		"level": 10,
+		"icon": 10,
+		"attack": 15,
+		"defense": 1,
+		"description": "A wolf-pelt staff tuned for stronger fireballs."
+	},
+	"Legendary Mage Fire Staff": {
+		"slot": "weapon",
+		"class": "mage",
+		"rarity": "legendary",
+		"level": 20,
+		"icon": 11,
+		"attack": 27,
+		"defense": 2,
+		"description": "A boss relic staff with a burning rune focus."
 	},
 	"Common Viking Armor": {
 		"slot": "armor",
