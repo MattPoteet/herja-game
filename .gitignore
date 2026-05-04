@@ -19,3 +19,6 @@ godot_client/index.js
 godot_client/index.pck
 godot_client/index.png
 godot_client/index.wasm
+godot_client/index.apple-touch-icon.png.import
+godot_client/index.icon.png.import
+godot_client/index.png.import
