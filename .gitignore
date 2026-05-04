@@ -2,5 +2,11 @@
 node_modules/
 .import/
 .godot/
+.vercel/
 .DS_Store
 *.tmp
+tmp/
+web/
+WebBuild/
+godot_client/index.apk
+godot_client/index.apk.idsig

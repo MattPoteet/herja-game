@@ -24,7 +24,9 @@ This build adds a local prototype account flow to the Godot client.
 - Press F5 to manually save.
 - Autosave runs every few seconds.
 - Press O to open friends/clan menu.
-- Friends and clan are saved locally for the selected account.
+- Friends, pending friend invites, notifications, and clan are saved locally for the selected account.
+- The social panel can send friend invites, accept incoming invites, decline incoming invites, and remove friends.
+- Notifications appear in the social panel and briefly in the HUD status line.
 
 ## Current limitation
 
@@ -36,6 +38,7 @@ The backend SQL now includes starter tables for:
 
 - `game_accounts`
 - `friendships`
+- `friend_invites`
 - `clans`
 - `clan_members`
 

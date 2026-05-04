@@ -32,6 +32,18 @@ create table if not exists public.friendships (
   unique(account_id, friend_name)
 );
 
+create table if not exists public.friend_invites (
+  id uuid primary key default gen_random_uuid(),
+  sender_account_id uuid not null references public.game_accounts(id) on delete cascade,
+  receiver_account_id uuid references public.game_accounts(id) on delete cascade,
+  receiver_name text not null,
+  sender_name text not null,
+  status text not null default 'pending',
+  created_at timestamptz not null default now(),
+  responded_at timestamptz,
+  unique(sender_account_id, receiver_name)
+);
+
 create table if not exists public.clans (
   id uuid primary key default gen_random_uuid(),
   name text unique not null,
@@ -57,6 +69,7 @@ create table if not exists public.world_events (
 
 alter table public.game_accounts enable row level security;
 alter table public.friendships enable row level security;
+alter table public.friend_invites enable row level security;
 alter table public.clans enable row level security;
 alter table public.clan_members enable row level security;
 alter table public.world_events enable row level security;
@@ -94,6 +107,23 @@ create policy "players can manage own friendships"
   to authenticated
   using (auth.uid() = account_id)
   with check (auth.uid() = account_id);
+
+drop policy if exists "players can read own friend invites" on public.friend_invites;
+drop policy if exists "players can manage sent friend invites" on public.friend_invites;
+drop policy if exists "players can update received friend invites" on public.friend_invites;
+create policy "players can read own friend invites"
+  on public.friend_invites for select
+  to authenticated
+  using (auth.uid() = sender_account_id or auth.uid() = receiver_account_id);
+create policy "players can manage sent friend invites"
+  on public.friend_invites for insert
+  to authenticated
+  with check (auth.uid() = sender_account_id);
+create policy "players can update received friend invites"
+  on public.friend_invites for update
+  to authenticated
+  using (auth.uid() = receiver_account_id)
+  with check (auth.uid() = receiver_account_id);
 
 drop policy if exists "players can read clans" on public.clans;
 create policy "players can read clans"

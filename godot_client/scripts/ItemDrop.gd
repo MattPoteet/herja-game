@@ -1,8 +1,11 @@
 extends Area2D
 
+const Balance = preload("res://scripts/Balance.gd")
 const ITEM_SHEET_PATH: String = "res://art/items/items.png"
+const GEAR_SHEET_PATH: String = "res://art/items/gear_v2.png"
 const ITEM_SIZE: int = 64
 const ITEM_COLUMNS: int = 4
+const GEAR_COLUMNS: int = 6
 
 const ITEM_INDEX: Dictionary = {
 	"Herb": 0,
@@ -20,7 +23,9 @@ const ITEM_INDEX: Dictionary = {
 	"Health Potion": 12,
 	"Greater Health Potion": 13,
 	"Mead": 14,
-	"Rune Tonic": 15
+	"Rune Tonic": 15,
+	"Iron Armguard": 3,
+	"Runed Brooch": 10
 }
 
 var item_name: String = "Herb"
@@ -87,6 +92,8 @@ func _setup_collision() -> void:
 
 
 func _get_item_texture(lookup_name: String) -> Texture2D:
+	if Balance.is_gear(lookup_name) and Balance.gear_icon_index(lookup_name) >= 0:
+		return _get_gear_texture(lookup_name)
 	if not ResourceLoader.exists(ITEM_SHEET_PATH):
 		return null
 
@@ -107,4 +114,24 @@ func _get_item_texture(lookup_name: String) -> Texture2D:
 		float(ITEM_SIZE)
 	)
 
+	return atlas
+
+
+func _get_gear_texture(lookup_name: String) -> Texture2D:
+	if not ResourceLoader.exists(GEAR_SHEET_PATH):
+		return null
+	var texture: Texture2D = load(GEAR_SHEET_PATH) as Texture2D
+	if texture == null:
+		return null
+	var index: int = Balance.gear_icon_index(lookup_name)
+	var column: int = index % GEAR_COLUMNS
+	var row: int = int(index / GEAR_COLUMNS)
+	var atlas: AtlasTexture = AtlasTexture.new()
+	atlas.atlas = texture
+	atlas.region = Rect2(
+		float(column * ITEM_SIZE),
+		float(row * ITEM_SIZE),
+		float(ITEM_SIZE),
+		float(ITEM_SIZE)
+	)
 	return atlas

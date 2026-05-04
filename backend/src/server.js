@@ -30,6 +30,7 @@ const supabaseAuth = SUPABASE_URL && SUPABASE_ANON_KEY
   : null;
 
 const players = new Map();
+const CHAT_MESSAGE_MAX_LENGTH = 180;
 
 function requireSupabase(res) {
   if (!supabaseAdmin || !supabaseAuth) {
@@ -43,7 +44,7 @@ function isAdminEmail(email) {
   return ADMIN_EMAILS.includes(String(email || '').trim().toLowerCase());
 }
 
-function publicAccount(row, session = null, friends = [], clan = {}) {
+function publicAccount(row, session = null, friends = [], clan = {}, friendInvitesReceived = [], friendInvitesSent = []) {
   return {
     id: row.id,
     email: row.email,
@@ -62,6 +63,9 @@ function publicAccount(row, session = null, friends = [], clan = {}) {
     last_latitude: row.last_latitude ?? null,
     last_longitude: row.last_longitude ?? null,
     friends,
+    friend_invites_received: friendInvitesReceived,
+    friend_invites_sent: friendInvitesSent,
+    notifications: [],
     clan,
     created_at: row.created_at,
     updated_at: row.updated_at,
@@ -79,17 +83,21 @@ async function getUserFromBearer(req) {
 }
 
 async function getSocial(accountId) {
-  const [{ data: friendRows }, { data: clanRows }] = await Promise.all([
+  const [{ data: friendRows }, { data: clanRows }, { data: receivedRows }, { data: sentRows }] = await Promise.all([
     supabaseAdmin.from('friendships').select('friend_name').eq('account_id', accountId).eq('status', 'accepted'),
-    supabaseAdmin.from('clan_members').select('role, clans(id, name)').eq('account_id', accountId).maybeSingle()
+    supabaseAdmin.from('clan_members').select('role, clans(id, name)').eq('account_id', accountId).maybeSingle(),
+    supabaseAdmin.from('friend_invites').select('sender_name').eq('receiver_account_id', accountId).eq('status', 'pending'),
+    supabaseAdmin.from('friend_invites').select('receiver_name').eq('sender_account_id', accountId).eq('status', 'pending')
   ]);
 
   const friends = Array.isArray(friendRows) ? friendRows.map(row => row.friend_name).filter(Boolean) : [];
+  const friendInvitesReceived = Array.isArray(receivedRows) ? receivedRows.map(row => row.sender_name).filter(Boolean) : [];
+  const friendInvitesSent = Array.isArray(sentRows) ? sentRows.map(row => row.receiver_name).filter(Boolean) : [];
   let clan = {};
   if (clanRows?.clans) {
     clan = { id: clanRows.clans.id, name: clanRows.clans.name, role: clanRows.role || 'Member' };
   }
-  return { friends, clan };
+  return { friends, clan, friendInvitesReceived, friendInvitesSent };
 }
 
 app.get('/health', (_req, res) => {
@@ -182,7 +190,11 @@ app.post('/auth/login', async (req, res) => {
   }
 
   const social = await getSocial(user.id);
-  res.json({ ok: true, account: publicAccount(profile, null, social.friends, social.clan), session: signedIn.session });
+  res.json({
+    ok: true,
+    account: publicAccount(profile, null, social.friends, social.clan, social.friendInvitesReceived, social.friendInvitesSent),
+    session: signedIn.session
+  });
 });
 
 app.post('/progress/save', async (req, res) => {
@@ -241,6 +253,101 @@ app.post('/friends/add', async (req, res) => {
 
   if (error) return res.status(500).json({ error: error.message });
   res.json({ ok: true });
+});
+
+app.post('/friends/invite', async (req, res) => {
+  if (!requireSupabase(res)) return;
+  const user = await getUserFromBearer(req);
+  if (!user) return res.status(401).json({ error: 'Invalid or missing access token.' });
+
+  const friendName = String(req.body.friend_name || '').trim();
+  if (friendName.length < 2) return res.status(400).json({ error: 'Friend name is required.' });
+
+  const [{ data: sender }, { data: receiver }] = await Promise.all([
+    supabaseAdmin.from('game_accounts').select('id, player_name, email').eq('id', user.id).maybeSingle(),
+    supabaseAdmin
+      .from('game_accounts')
+      .select('id, player_name, email')
+      .or(`email.eq.${friendName.toLowerCase()},player_name.eq.${friendName}`)
+      .maybeSingle()
+  ]);
+
+  const senderName = sender?.player_name || user.email || 'Player';
+  if (receiver?.id === user.id) return res.status(400).json({ error: 'You cannot invite yourself.' });
+
+  const { error } = await supabaseAdmin.from('friend_invites').upsert({
+    sender_account_id: user.id,
+    receiver_account_id: receiver?.id ?? null,
+    receiver_name: receiver?.player_name ?? friendName,
+    sender_name: senderName,
+    status: 'pending',
+    responded_at: null
+  }, { onConflict: 'sender_account_id,receiver_name' });
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true, receiver_name: receiver?.player_name ?? friendName });
+});
+
+app.post('/friends/invite/respond', async (req, res) => {
+  if (!requireSupabase(res)) return;
+  const user = await getUserFromBearer(req);
+  if (!user) return res.status(401).json({ error: 'Invalid or missing access token.' });
+
+  const friendName = String(req.body.friend_name || '').trim();
+  const action = String(req.body.action || '').trim().toLowerCase();
+  if (friendName.length < 2) return res.status(400).json({ error: 'Friend name is required.' });
+  if (!['accept', 'decline'].includes(action)) return res.status(400).json({ error: 'Action must be accept or decline.' });
+
+  const { data: invite, error: inviteError } = await supabaseAdmin
+    .from('friend_invites')
+    .select('*')
+    .eq('receiver_account_id', user.id)
+    .eq('sender_name', friendName)
+    .eq('status', 'pending')
+    .maybeSingle();
+
+  if (inviteError) return res.status(500).json({ error: inviteError.message });
+  if (!invite) return res.status(404).json({ error: 'Friend invite not found.' });
+
+  const status = action === 'accept' ? 'accepted' : 'declined';
+  const { error: updateError } = await supabaseAdmin
+    .from('friend_invites')
+    .update({ status, responded_at: new Date().toISOString() })
+    .eq('id', invite.id);
+
+  if (updateError) return res.status(500).json({ error: updateError.message });
+
+  if (action === 'accept') {
+    const { data: receiverProfile } = await supabaseAdmin
+      .from('game_accounts')
+      .select('id, player_name')
+      .eq('id', user.id)
+      .maybeSingle();
+    const receiverName = receiverProfile?.player_name || user.email || 'Player';
+
+    const friendshipRows = [
+      {
+        account_id: user.id,
+        friend_account_id: invite.sender_account_id,
+        friend_name: invite.sender_name,
+        status: 'accepted'
+      },
+      {
+        account_id: invite.sender_account_id,
+        friend_account_id: user.id,
+        friend_name: receiverName,
+        status: 'accepted'
+      }
+    ];
+
+    const { error: friendError } = await supabaseAdmin
+      .from('friendships')
+      .upsert(friendshipRows, { onConflict: 'account_id,friend_name' });
+
+    if (friendError) return res.status(500).json({ error: friendError.message });
+  }
+
+  res.json({ ok: true, status });
 });
 
 app.post('/clans/create-or-join', async (req, res) => {
@@ -302,20 +409,42 @@ wss.on('connection', (socket) => {
     try {
       const msg = JSON.parse(buffer.toString());
       if (msg.type === 'player_state' && msg.id) {
+        socket.playerId = String(msg.id);
         players.set(msg.id, {
           id: msg.id,
           x: Number(msg.x || 0),
           y: Number(msg.y || 0),
           name: String(msg.name || 'Player'),
+          username: String(msg.username || ''),
           level: Number(msg.level || 1),
           characterId: String(msg.character_id || 'viking'),
           clan: String(msg.clan || ''),
           updatedAt: Date.now()
         });
+      } else if (msg.type === 'chat_message' && msg.id) {
+        const text = String(msg.message || '').trim().slice(0, CHAT_MESSAGE_MAX_LENGTH);
+        if (!text) return;
+        const player = players.get(msg.id) || {};
+        const chat = {
+          type: 'chat_message',
+          id: String(msg.id),
+          name: String(player.name || msg.name || 'Player'),
+          clan: String(player.clan || msg.clan || ''),
+          message: text,
+          createdAt: Date.now()
+        };
+        const raw = JSON.stringify(chat);
+        for (const client of wss.clients) {
+          if (client.readyState === 1) client.send(raw);
+        }
       }
     } catch (error) {
       console.warn('Bad websocket packet', error.message);
     }
+  });
+
+  socket.on('close', () => {
+    if (socket.playerId) players.delete(socket.playerId);
   });
 });
 

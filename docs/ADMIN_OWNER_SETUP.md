@@ -8,6 +8,7 @@ When the logged-in account email is listed in `ADMIN_EMAILS`, the game returns `
 
 - Craft potions without ingredients
 - Build structures without materials
+- Teleport to an online player from the Social panel by typing their username, player name, or player id
 - See `ADMIN` in the HUD and inventory screen
 
 Regular users still need normal materials.

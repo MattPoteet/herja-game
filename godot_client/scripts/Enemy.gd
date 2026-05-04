@@ -2,6 +2,7 @@ extends Area2D
 
 signal defeated(enemy: Node)
 
+const Balance = preload("res://scripts/Balance.gd")
 const ENEMY_SHEET_PATH: String = "res://art/enemies/enemies.png"
 const ITEM_DROP_SCENE_PATH: String = "res://scenes/ItemDrop.tscn"
 const FRAME_SIZE: int = 64
@@ -16,16 +17,25 @@ const ENEMY_ROW_OFFSETS: Dictionary = {
 
 var enemy_name: String = "Wild Wisp"
 var hp: int = 30
+var max_hp: int = 30
 var attack: int = 5
 var xp_reward: int = 20
 var gold_reward: int = 3
 var loot_table: Array[String] = ["Herb", "Small Gem", "Bone Charm", ""]
 var target: Node2D
 var move_speed: float = 42.0
+var chase_range: float = 240.0
+var attack_range: float = 32.0
+var preferred_range: float = 28.0
+var attack_cooldown: float = 1.25
+var attack_timer: float = 0.0
+var is_attacking: bool = false
+var combat_paused: bool = false
 var facing_direction: String = "down"
 
 var animated_sprite: AnimatedSprite2D
 var name_label: Label
+var health_bar: ProgressBar
 var item_drop_scene: PackedScene = preload("res://scenes/ItemDrop.tscn")
 
 
@@ -34,66 +44,140 @@ func _ready() -> void:
 	_setup_enemy_visuals()
 
 
-func init(spawn_name: String, spawn_hp: int, spawn_attack: int, xp: int, gold: int, player: Node2D) -> void:
+func init(spawn_name: String, player: Node2D) -> void:
 	enemy_name = spawn_name
-	hp = spawn_hp
-	attack = spawn_attack
-	xp_reward = xp
-	gold_reward = gold
 	target = player
 
-	match enemy_name:
-		"Wild Wisp":
-			move_speed = 55.0
-			loot_table = ["Herb", "Small Gem", "Rune Dust", "Crystal Vial", "", ""]
-		"Forest Imp":
-			move_speed = 48.0
-			loot_table = ["Herb", "Wood", "Mushroom", "Fur", "Stone", "Crystal Vial"]
-		"Stone Boar":
-			move_speed = 38.0
-			loot_table = ["Bone Charm", "Iron Ore", "Small Gem", "Stone", "Rune Dust", "Crystal Vial"]
-		_:
-			move_speed = 42.0
-			loot_table = ["Herb", "Small Gem", "Bone Charm", "Stone", "Wood", ""]
+	var data: Dictionary = Balance.enemy_data(enemy_name)
+	hp = int(data.get("hp", hp))
+	max_hp = hp
+	attack = int(data.get("attack", attack))
+	xp_reward = int(data.get("xp", xp_reward))
+	gold_reward = int(data.get("gold", gold_reward))
+	move_speed = float(data.get("move_speed", move_speed))
+	chase_range = float(data.get("chase_range", chase_range))
+	attack_range = float(data.get("attack_range", attack_range))
+	preferred_range = float(data.get("preferred_range", preferred_range))
+	attack_cooldown = float(data.get("attack_cooldown", attack_cooldown))
+	var raw_loot: Variant = data.get("loot", loot_table)
+	if raw_loot is Array:
+		loot_table.clear()
+		for item in raw_loot:
+			loot_table.append(str(item))
 
 	_setup_enemy_visuals()
 
 
 func _process(delta: float) -> void:
+	if combat_paused:
+		_play_idle()
+		return
 	if target == null:
 		_play_idle()
 		return
+	if attack_timer > 0.0:
+		attack_timer = max(0.0, attack_timer - delta)
 
 	var to_player: Vector2 = target.global_position - global_position
 	var distance: float = to_player.length()
 
-	if distance < 240.0 and distance > 32.0:
+	if is_attacking:
+		_play_idle()
+	elif distance < chase_range and distance > preferred_range:
 		_update_facing_direction(to_player)
 		global_position += to_player.normalized() * move_speed * delta
 		_play_walk()
-	elif distance <= 32.0:
+	elif distance <= attack_range:
 		_update_facing_direction(to_player)
 		_play_idle()
-		if randi() % 45 == 0 and target.has_method("take_damage"):
-			target.call("take_damage", attack)
+		if attack_timer <= 0.0:
+			_attack_target()
 	else:
 		_play_idle()
 
 
 func take_damage(amount: int) -> void:
-	hp -= amount
+	var damage: int = max(0, amount)
+	if damage <= 0:
+		return
+	_show_floating_text("-%d" % damage, Color(1.0, 0.72, 0.28))
+	_flash_hit()
+	hp -= damage
+	_update_health_bar()
 
 	if hp <= 0:
-		var loot: String = loot_table.pick_random()
+		var target_level: int = 1
+		var target_character: String = "viking"
+		if target != null:
+			if target.get("stats") is Dictionary:
+				target_level = int((target.get("stats") as Dictionary).get("level", 1))
+			target_character = str(target.get("character_id"))
+		var loot: String = Balance.random_enemy_loot(enemy_name, target_level, target_character)
 
 		if target != null and target.has_method("gain_reward"):
 			target.call("gain_reward", xp_reward, gold_reward, "")
+			_show_floating_text("+%d XP  +%d gold" % [xp_reward, gold_reward], Color(0.84, 1.0, 0.52), Vector2(0, -72))
 
 		if loot != "":
 			_spawn_item_drop(loot)
 
 		defeated.emit(self)
 		queue_free()
+
+
+func _attack_target() -> void:
+	if target == null or is_attacking or combat_paused:
+		return
+	is_attacking = true
+	attack_timer = attack_cooldown
+	var start_position: Vector2 = global_position
+	var to_player: Vector2 = target.global_position - global_position
+	var attack_direction: Vector2 = to_player.normalized()
+	if attack_direction == Vector2.ZERO:
+		attack_direction = Vector2.DOWN
+
+	_warn_attack()
+	await get_tree().create_timer(0.18).timeout
+	if not is_instance_valid(self) or target == null or combat_paused:
+		is_attacking = false
+		return
+
+	var current_to_player: Vector2 = target.global_position - global_position
+	if current_to_player.length() > attack_range + 12.0:
+		is_attacking = false
+		return
+
+	var lunge_position: Vector2 = start_position + attack_direction * _lunge_distance()
+	var tween: Tween = create_tween()
+	tween.tween_property(self, "global_position", lunge_position, 0.08)
+	tween.tween_property(self, "global_position", start_position, 0.12)
+
+	if not combat_paused and target != null and global_position.distance_to(target.global_position) <= attack_range + 8.0 and target.has_method("take_damage"):
+		target.call("take_damage", attack)
+
+	await get_tree().create_timer(0.16).timeout
+	if is_instance_valid(self):
+		is_attacking = false
+
+
+func set_combat_paused(paused: bool) -> void:
+	combat_paused = paused
+	set_process(not paused)
+	if paused:
+		is_attacking = false
+		_play_idle()
+
+
+func _warn_attack() -> void:
+	if animated_sprite == null:
+		return
+	animated_sprite.modulate = Color(1.0, 0.78, 0.34)
+	var tween: Tween = create_tween()
+	tween.tween_property(animated_sprite, "modulate", Color.WHITE, 0.18)
+
+
+func _lunge_distance() -> float:
+	return float(Balance.enemy_data(enemy_name).get("lunge_distance", 10.0))
 
 
 func _setup_enemy_visuals() -> void:
@@ -121,6 +205,19 @@ func _setup_enemy_visuals() -> void:
 	name_label.position = Vector2(-36, -48)
 	name_label.z_index = 12
 
+	health_bar = get_node_or_null("HealthBar") as ProgressBar
+	if health_bar == null:
+		health_bar = ProgressBar.new()
+		health_bar.name = "HealthBar"
+		add_child(health_bar)
+	health_bar.position = Vector2(-30, -30)
+	health_bar.size = Vector2(60, 7)
+	health_bar.show_percentage = false
+	health_bar.z_index = 14
+	health_bar.add_theme_stylebox_override("background", _bar_style(Color(0.08, 0.05, 0.04, 0.88), 3))
+	health_bar.add_theme_stylebox_override("fill", _bar_style(Color(0.76, 0.14, 0.10, 0.96), 3))
+	_update_health_bar()
+
 
 func _setup_collision() -> void:
 	var collision: CollisionShape2D = get_node_or_null("CollisionShape2D") as CollisionShape2D
@@ -133,6 +230,53 @@ func _setup_collision() -> void:
 	var shape: CircleShape2D = CircleShape2D.new()
 	shape.radius = 18.0
 	collision.shape = shape
+
+
+func _update_health_bar() -> void:
+	if health_bar == null:
+		return
+	health_bar.max_value = max(1, max_hp)
+	health_bar.value = clamp(hp, 0, max_hp)
+	health_bar.visible = hp < max_hp
+
+
+func _bar_style(color: Color, radius: int) -> StyleBoxFlat:
+	var style: StyleBoxFlat = StyleBoxFlat.new()
+	style.bg_color = color
+	style.corner_radius_top_left = radius
+	style.corner_radius_top_right = radius
+	style.corner_radius_bottom_left = radius
+	style.corner_radius_bottom_right = radius
+	return style
+
+
+func _flash_hit() -> void:
+	if animated_sprite == null:
+		return
+	animated_sprite.modulate = Color(1.0, 0.42, 0.32)
+	var tween: Tween = create_tween()
+	tween.tween_property(animated_sprite, "modulate", Color.WHITE, 0.16)
+
+
+func _show_floating_text(text: String, color: Color, offset: Vector2 = Vector2(0, -46)) -> void:
+	var root: Node = get_tree().current_scene
+	if root == null:
+		return
+	var label: Label = Label.new()
+	label.text = text
+	label.global_position = global_position + offset
+	label.z_index = 100
+	label.add_theme_font_size_override("font_size", 18)
+	label.add_theme_color_override("font_color", color)
+	label.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.82))
+	label.add_theme_constant_override("shadow_offset_x", 1)
+	label.add_theme_constant_override("shadow_offset_y", 1)
+	root.add_child(label)
+	var tween: Tween = label.create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(label, "global_position", label.global_position + Vector2(0, -28), 0.65)
+	tween.tween_property(label, "modulate:a", 0.0, 0.65).set_delay(0.18)
+	tween.finished.connect(label.queue_free)
 
 
 func _build_enemy_sprite_frames() -> SpriteFrames:
@@ -200,7 +344,7 @@ func _play_idle() -> void:
 
 	var anim_name: String = "idle_" + facing_direction
 	if animated_sprite.sprite_frames.has_animation(anim_name):
-		animated_sprite.play(anim_name)
+		_play_sprite_animation(anim_name)
 
 
 func _play_walk() -> void:
@@ -209,7 +353,13 @@ func _play_walk() -> void:
 
 	var anim_name: String = "walk_" + facing_direction
 	if animated_sprite.sprite_frames.has_animation(anim_name):
-		animated_sprite.play(anim_name)
+		_play_sprite_animation(anim_name)
+
+
+func _play_sprite_animation(anim_name: String) -> void:
+	if animated_sprite.animation == anim_name and animated_sprite.is_playing():
+		return
+	animated_sprite.play(anim_name)
 
 
 func _spawn_item_drop(item_name: String) -> void:
@@ -222,4 +372,7 @@ func _spawn_item_drop(item_name: String) -> void:
 	if drop.has_method("init"):
 		drop.call("init", item_name, target)
 
-	get_tree().current_scene.call_deferred("add_child", drop)
+	var scene_root: Node = get_tree().current_scene
+	if scene_root == null:
+		scene_root = get_tree().root
+	scene_root.call_deferred("add_child", drop)

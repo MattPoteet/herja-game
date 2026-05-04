@@ -71,12 +71,14 @@ Mead:
 
 - Herb x1
 - Wood x1
+- Restores 20 HP when used
 
 Rune Tonic:
 
 - Rune Dust x2
 - Bone Charm x1
 - Crystal Vial x1
+- Grants 45 XP when used
 
 ## Building System
 

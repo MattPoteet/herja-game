@@ -1,5 +1,9 @@
 extends CanvasLayer
 
+signal menu_pressed
+
+const Balance = preload("res://scripts/Balance.gd")
+
 var player: Node
 var account_manager: Node
 var hp_label: Label
@@ -8,8 +12,11 @@ var gold_label: Label
 var inv_label: Label
 var gps_label: Label
 var profile_label: Label
+var clan_label: Label
 var status_label: Label
 var attribution_label: Label
+var hp_bar: ProgressBar
+var xp_bar: ProgressBar
 
 
 func setup(player_node: Node, manager: Node = null) -> void:
@@ -32,53 +39,118 @@ func _build_ui() -> void:
 
 	var panel: Panel = Panel.new()
 	panel.position = Vector2(16, 16)
-	panel.size = Vector2(430, 216)
-	panel.add_theme_stylebox_override("panel", _panel_style(Color(0.08, 0.10, 0.14, 0.92), Color(0.24, 0.30, 0.40), 16))
+	panel.size = Vector2(360, 176)
+	panel.add_theme_stylebox_override("panel", _panel_style(Color(0.055, 0.070, 0.090, 0.92), Color(0.22, 0.27, 0.34), 8))
 	add_child(panel)
 
-	var box: VBoxContainer = VBoxContainer.new()
-	box.position = Vector2(14, 12)
-	box.size = Vector2(398, 186)
-	box.add_theme_constant_override("separation", 4)
-	panel.add_child(box)
+	var root: VBoxContainer = VBoxContainer.new()
+	root.position = Vector2(14, 12)
+	root.size = Vector2(332, 152)
+	root.add_theme_constant_override("separation", 7)
+	panel.add_child(root)
 
-	var title: Label = Label.new()
-	title.text = "HERJA"
-	title.add_theme_font_size_override("font_size", 22)
-	title.add_theme_color_override("font_color", Color(0.96, 0.92, 0.74))
-	box.add_child(title)
+	var header: HBoxContainer = HBoxContainer.new()
+	header.add_theme_constant_override("separation", 8)
+	root.add_child(header)
 
-	profile_label = Label.new()
-	hp_label = Label.new()
-	xp_label = Label.new()
-	gold_label = Label.new()
-	inv_label = Label.new()
-	gps_label = Label.new()
-	status_label = Label.new()
+	var title: Label = _make_label("HERJA", 18, Color(0.96, 0.90, 0.68))
+	title.custom_minimum_size = Vector2(66, 22)
+	header.add_child(title)
+
+	profile_label = _make_label("Viking", 15, Color(0.93, 0.96, 1.0))
+	profile_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(profile_label)
+
+	clan_label = _make_label("No Clan", 12, Color(0.68, 0.76, 0.86))
+	clan_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	clan_label.custom_minimum_size = Vector2(86, 22)
+	header.add_child(clan_label)
+
+	var bars: VBoxContainer = VBoxContainer.new()
+	bars.add_theme_constant_override("separation", 5)
+	root.add_child(bars)
+
+	var hp_row: HBoxContainer = HBoxContainer.new()
+	hp_row.add_theme_constant_override("separation", 8)
+	bars.add_child(hp_row)
+	hp_label = _make_label("HP", 13, Color(0.98, 0.86, 0.84))
+	hp_label.custom_minimum_size = Vector2(92, 18)
+	hp_row.add_child(hp_label)
+	hp_bar = _make_bar(Color(0.82, 0.20, 0.18))
+	hp_row.add_child(hp_bar)
+
+	var xp_row: HBoxContainer = HBoxContainer.new()
+	xp_row.add_theme_constant_override("separation", 8)
+	bars.add_child(xp_row)
+	xp_label = _make_label("XP", 13, Color(0.80, 0.88, 1.0))
+	xp_label.custom_minimum_size = Vector2(92, 18)
+	xp_row.add_child(xp_label)
+	xp_bar = _make_bar(Color(0.24, 0.48, 0.90))
+	xp_row.add_child(xp_bar)
+
+	var stats: HBoxContainer = HBoxContainer.new()
+	stats.add_theme_constant_override("separation", 6)
+	root.add_child(stats)
+	gold_label = _make_chip("Gold 0")
+	gps_label = _make_chip("GPS loading")
+	stats.add_child(gold_label)
+	stats.add_child(gps_label)
+
+	inv_label = _make_label("Recent loot: none", 12, Color(0.78, 0.84, 0.92))
+	inv_label.clip_text = true
+	root.add_child(inv_label)
+
+	status_label = _make_label("", 12, Color(0.92, 0.86, 0.58))
 	status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	for label in [profile_label, hp_label, xp_label, gold_label, inv_label, gps_label, status_label]:
-		label.add_theme_color_override("font_color", Color(0.90, 0.93, 0.98))
-		box.add_child(label)
-	status_label.add_theme_color_override("font_color", Color(0.86, 0.84, 0.64))
+	status_label.custom_minimum_size = Vector2(0, 32)
+	root.add_child(status_label)
 
-	var hint_panel: Panel = Panel.new()
-	hint_panel.position = Vector2(16, 246)
-	hint_panel.size = Vector2(600, 36)
-	hint_panel.add_theme_stylebox_override("panel", _panel_style(Color(0.08, 0.10, 0.14, 0.84), Color(0.24, 0.30, 0.40), 12))
-	add_child(hint_panel)
+	var menu_button: Button = Button.new()
+	menu_button.text = "Menu"
+	menu_button.position = Vector2(16, 204)
+	menu_button.size = Vector2(104, 34)
+	menu_button.add_theme_stylebox_override("normal", _panel_style(Color(0.13, 0.16, 0.22, 0.92), Color(0.35, 0.46, 0.60), 8))
+	menu_button.add_theme_stylebox_override("hover", _panel_style(Color(0.18, 0.23, 0.31, 0.96), Color(0.47, 0.60, 0.78), 8))
+	menu_button.add_theme_stylebox_override("pressed", _panel_style(Color(0.10, 0.13, 0.18, 0.96), Color(0.47, 0.60, 0.78), 8))
+	menu_button.add_theme_color_override("font_color", Color(0.95, 0.97, 0.99))
+	menu_button.pressed.connect(func() -> void:
+		menu_pressed.emit()
+	)
+	add_child(menu_button)
 
-	var hint: Label = Label.new()
-	hint.text = "Move: WASD / Arrows   Attack: Space   Inventory: I   Craft: C   Build: B   Save: F5   Social: O"
-	hint.position = Vector2(12, 8)
-	hint.add_theme_color_override("font_color", Color(0.80, 0.84, 0.91))
-	hint_panel.add_child(hint)
-
-	attribution_label = Label.new()
-	attribution_label.text = "Map data © OpenStreetMap contributors"
-	attribution_label.position = Vector2(16, 290)
-	attribution_label.add_theme_font_size_override("font_size", 12)
-	attribution_label.add_theme_color_override("font_color", Color(0.74, 0.78, 0.84))
+	attribution_label = _make_label("Map data (c) OpenStreetMap contributors", 11, Color(0.64, 0.70, 0.78))
+	attribution_label.position = Vector2(16, 246)
 	add_child(attribution_label)
+
+
+func _make_label(text: String, font_size: int, color: Color) -> Label:
+	var label: Label = Label.new()
+	label.text = text
+	label.add_theme_font_size_override("font_size", font_size)
+	label.add_theme_color_override("font_color", color)
+	return label
+
+
+func _make_chip(text: String) -> Label:
+	var label: Label = _make_label(text, 12, Color(0.88, 0.92, 0.98))
+	label.custom_minimum_size = Vector2(0, 24)
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.add_theme_stylebox_override("normal", _panel_style(Color(0.10, 0.12, 0.16, 0.86), Color(0.20, 0.25, 0.32), 6))
+	return label
+
+
+func _make_bar(fill_color: Color) -> ProgressBar:
+	var bar: ProgressBar = ProgressBar.new()
+	bar.min_value = 0.0
+	bar.max_value = 100.0
+	bar.value = 100.0
+	bar.show_percentage = false
+	bar.custom_minimum_size = Vector2(0, 14)
+	bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bar.add_theme_stylebox_override("background", _panel_style(Color(0.10, 0.12, 0.16, 0.90), Color(0.16, 0.19, 0.24), 5))
+	bar.add_theme_stylebox_override("fill", _bar_fill_style(fill_color))
+	return bar
 
 
 func _panel_style(bg: Color, border: Color, radius: int) -> StyleBoxFlat:
@@ -93,6 +165,18 @@ func _panel_style(bg: Color, border: Color, radius: int) -> StyleBoxFlat:
 	style.corner_radius_top_right = radius
 	style.corner_radius_bottom_left = radius
 	style.corner_radius_bottom_right = radius
+	style.content_margin_left = 8
+	style.content_margin_right = 8
+	return style
+
+
+func _bar_fill_style(color: Color) -> StyleBoxFlat:
+	var style: StyleBoxFlat = StyleBoxFlat.new()
+	style.bg_color = color
+	style.corner_radius_top_left = 5
+	style.corner_radius_top_right = 5
+	style.corner_radius_bottom_left = 5
+	style.corner_radius_bottom_right = 5
 	return style
 
 
@@ -100,10 +184,10 @@ func _refresh_all() -> void:
 	_on_profile_changed(str(player.stats.get("name", "Viking")), str(player.get("character_id")))
 	_on_health_changed(int(player.stats["hp"]), int(player.stats["max_hp"]))
 	_on_xp_changed(int(player.stats["xp"]), int(player.stats["level"]))
-	gold_label.text = "Gold: %s" % int(player.stats["gold"])
+	gold_label.text = "Gold %s" % int(player.stats["gold"])
 	_on_inventory_changed(player.inventory)
 	set_gps(0.0, 0.0, 0)
-	set_status("Loaded. Press I for inventory, C to craft potions, B to build.")
+	set_status("Loaded. Inventory I, craft C, build B.")
 
 
 func _on_profile_changed(player_name: String, character_id: String) -> void:
@@ -113,8 +197,9 @@ func _on_profile_changed(player_name: String, character_id: String) -> void:
 		var clan: Variant = account.get("clan", {})
 		if clan is Dictionary and not (clan as Dictionary).is_empty():
 			clan_text = str((clan as Dictionary).get("name", "Clan"))
-	var admin_text: String = "   |   ADMIN" if _is_admin() else ""
-	profile_label.text = "Player: %s   |   Character: %s   |   Clan: %s%s" % [player_name, _character_display(character_id), clan_text, admin_text]
+	var admin_text: String = " ADMIN" if _is_admin() else ""
+	profile_label.text = "%s  %s%s" % [player_name, _character_display(character_id), admin_text]
+	clan_label.text = clan_text
 
 
 func _is_admin() -> bool:
@@ -129,16 +214,23 @@ func _is_admin() -> bool:
 
 
 func _on_health_changed(current: int, maximum: int) -> void:
-	hp_label.text = "HP: %s / %s" % [current, maximum]
+	hp_label.text = "HP %s / %s" % [current, maximum]
+	if hp_bar != null:
+		hp_bar.max_value = max(1, maximum)
+		hp_bar.value = clamp(current, 0, maximum)
 
 
 func _on_xp_changed(current: int, level: int) -> void:
-	xp_label.text = "Level: %s   |   XP: %s / %s" % [level, current, level * 100]
-	gold_label.text = "Gold: %s" % int(player.stats["gold"])
+	var required: int = Balance.xp_required_for_level(level)
+	xp_label.text = "Lv %s  XP %s / %s" % [level, current, required]
+	if xp_bar != null:
+		xp_bar.max_value = required
+		xp_bar.value = clamp(current, 0, required)
+	gold_label.text = "Gold %s" % int(player.stats["gold"])
 
 
 func _on_inventory_changed(items: Array) -> void:
-	var preview: Array = items.slice(max(0, items.size() - 5), items.size())
+	var preview: Array = items.slice(max(0, items.size() - 4), items.size())
 	if preview.is_empty():
 		inv_label.text = "Recent loot: none"
 	else:
@@ -149,9 +241,9 @@ func set_gps(latitude: float, longitude: float, zoom: int) -> void:
 	if gps_label == null:
 		return
 	if zoom <= 0:
-		gps_label.text = "GPS map: loading free map tiles..."
+		gps_label.text = "GPS loading"
 	else:
-		gps_label.text = "GPS: %.5f, %.5f   |   Zoom: %d" % [latitude, longitude, zoom]
+		gps_label.text = "%.4f, %.4f  z%d" % [latitude, longitude, zoom]
 
 
 func set_status(message: String) -> void:

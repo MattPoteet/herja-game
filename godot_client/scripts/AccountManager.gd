@@ -2,14 +2,16 @@ extends Node
 
 signal account_changed(account: Dictionary)
 signal social_changed(account: Dictionary)
+signal notifications_changed(notifications: Array)
 
+const Balance = preload("res://scripts/Balance.gd")
 const ACCOUNTS_PATH: String = "user://accounts.json"
 const CURRENT_SESSION_PATH: String = "user://current_account.json"
 const ACCOUNT_VERSION: int = 2
 
 # Development backend. Run backend with: cd backend && npm install && npm run dev
 # For production, deploy the backend and change this URL.
-const BACKEND_BASE_URL: String = "http://127.0.0.1:8787"
+const BACKEND_BASE_URL: String = "https://herja-backend.onrender.com"
 const USE_SUPABASE_BACKEND: bool = true
 const OWNER_ADMIN_EMAILS: Array[String] = ["matthewpoteet1@gmail.com"]
 
@@ -225,6 +227,126 @@ func add_friend(friend_name: String) -> bool:
 	return true
 
 
+func send_friend_invite(friend_name: String) -> bool:
+	if not _has_current_mutable_account():
+		return false
+	var clean_name: String = friend_name.strip_edges()
+	if clean_name.length() < 2:
+		return false
+
+	var account: Dictionary = accounts[current_account_id] as Dictionary
+	var player_name: String = str(account.get("player_name", "Viking"))
+	var friends: Array = _get_friends_from_account(account)
+	if friends.has(clean_name):
+		_add_notification("You are already friends with %s." % clean_name)
+		return false
+
+	var sent: Array = _get_invites_from_account(account, "friend_invites_sent")
+	if not sent.has(clean_name):
+		sent.append(clean_name)
+	account["friend_invites_sent"] = sent
+	account["updated_at_unix"] = Time.get_unix_time_from_system()
+	accounts[current_account_id] = account
+
+	var local_target_id: String = _find_account_id_by_player_or_email(clean_name)
+	if local_target_id != "":
+		var target: Dictionary = accounts[local_target_id] as Dictionary
+		var incoming: Array = _get_invites_from_account(target, "friend_invites_received")
+		if not incoming.has(player_name):
+			incoming.append(player_name)
+		target["friend_invites_received"] = incoming
+		target["notifications"] = _notifications_with_message(target, "%s sent you a friend invite." % player_name)
+		target["updated_at_unix"] = Time.get_unix_time_from_system()
+		accounts[local_target_id] = target
+
+	save_accounts()
+	_add_notification("Friend invite sent to %s." % clean_name)
+	social_changed.emit(get_current_account())
+
+	if USE_SUPABASE_BACKEND and not bool(account.get("is_guest", false)):
+		_sync_friend_invite_to_backend(clean_name)
+	return true
+
+
+func accept_friend_invite(friend_name: String) -> bool:
+	if not _has_current_mutable_account():
+		return false
+	var clean_name: String = friend_name.strip_edges()
+	if clean_name.length() < 2:
+		return false
+
+	var account: Dictionary = accounts[current_account_id] as Dictionary
+	var received: Array = _get_invites_from_account(account, "friend_invites_received")
+	if not received.has(clean_name):
+		return false
+	received.erase(clean_name)
+	account["friend_invites_received"] = received
+
+	var friends: Array = _get_friends_from_account(account)
+	if not friends.has(clean_name):
+		friends.append(clean_name)
+	account["friends"] = friends
+	account["updated_at_unix"] = Time.get_unix_time_from_system()
+	accounts[current_account_id] = account
+
+	var local_sender_id: String = _find_account_id_by_player_or_email(clean_name)
+	if local_sender_id != "":
+		var sender: Dictionary = accounts[local_sender_id] as Dictionary
+		var player_name: String = str(account.get("player_name", "Viking"))
+		var sender_sent: Array = _get_invites_from_account(sender, "friend_invites_sent")
+		sender_sent.erase(player_name)
+		sender["friend_invites_sent"] = sender_sent
+		var sender_friends: Array = _get_friends_from_account(sender)
+		if not sender_friends.has(player_name):
+			sender_friends.append(player_name)
+		sender["friends"] = sender_friends
+		sender["notifications"] = _notifications_with_message(sender, "%s accepted your friend invite." % player_name)
+		sender["updated_at_unix"] = Time.get_unix_time_from_system()
+		accounts[local_sender_id] = sender
+
+	save_accounts()
+	_add_notification("Accepted friend invite from %s." % clean_name)
+	social_changed.emit(get_current_account())
+
+	if USE_SUPABASE_BACKEND and not bool(account.get("is_guest", false)):
+		_sync_friend_invite_response_to_backend(clean_name, true)
+	return true
+
+
+func decline_friend_invite(friend_name: String) -> bool:
+	if not _has_current_mutable_account():
+		return false
+	var clean_name: String = friend_name.strip_edges()
+	if clean_name.length() < 2:
+		return false
+
+	var account: Dictionary = accounts[current_account_id] as Dictionary
+	var received: Array = _get_invites_from_account(account, "friend_invites_received")
+	if not received.has(clean_name):
+		return false
+	received.erase(clean_name)
+	account["friend_invites_received"] = received
+	account["updated_at_unix"] = Time.get_unix_time_from_system()
+	accounts[current_account_id] = account
+	var local_sender_id: String = _find_account_id_by_player_or_email(clean_name)
+	if local_sender_id != "":
+		var sender: Dictionary = accounts[local_sender_id] as Dictionary
+		var player_name: String = str(account.get("player_name", "Viking"))
+		var sender_sent: Array = _get_invites_from_account(sender, "friend_invites_sent")
+		sender_sent.erase(player_name)
+		sender["friend_invites_sent"] = sender_sent
+		sender["notifications"] = _notifications_with_message(sender, "%s declined your friend invite." % player_name)
+		sender["updated_at_unix"] = Time.get_unix_time_from_system()
+		accounts[local_sender_id] = sender
+	save_accounts()
+	_add_notification("Declined friend invite from %s." % clean_name)
+	social_changed.emit(get_current_account())
+
+	if USE_SUPABASE_BACKEND and not bool(account.get("is_guest", false)):
+		_sync_friend_invite_response_to_backend(clean_name, false)
+	return true
+
+
 func remove_friend(friend_name: String) -> bool:
 	if not _has_current_mutable_account():
 		return false
@@ -281,11 +403,12 @@ func update_progress_snapshot(player: Node) -> void:
 	account["character_id"] = str(player.get("character_id"))
 	account["level"] = int(player.stats.get("level", 1))
 	account["xp"] = int(player.stats.get("xp", 0))
-	account["hp"] = int(player.stats.get("hp", 100))
-	account["max_hp"] = int(player.stats.get("max_hp", 100))
-	account["attack"] = int(player.stats.get("attack", 12))
+	account["hp"] = int(player.stats.get("hp", Balance.BASE_PLAYER_MAX_HP))
+	account["max_hp"] = int(player.stats.get("max_hp", Balance.BASE_PLAYER_MAX_HP))
+	account["attack"] = int(player.stats.get("attack", Balance.BASE_PLAYER_ATTACK))
 	account["gold"] = int(player.stats.get("gold", 0))
 	account["inventory"] = player.inventory.duplicate(true)
+	account["equipment"] = player.get("equipment").duplicate(true)
 	account["last_position"] = {"x": player.global_position.x, "y": player.global_position.y}
 	account["updated_at_unix"] = Time.get_unix_time_from_system()
 	accounts[current_account_id] = account
@@ -302,6 +425,9 @@ func sync_progress_to_supabase(player: Node, world_map: Node) -> void:
 	var geo: Dictionary = {}
 	if world_map != null and world_map.has_method("world_to_geo"):
 		geo = world_map.call("world_to_geo", player.global_position)
+	elif world_map != null and world_map.has_method("world_to_lat_lon"):
+		var lat_lon: Vector2 = world_map.call("world_to_lat_lon", player.global_position)
+		geo = {"latitude": lat_lon.x, "longitude": lat_lon.y}
 
 	var payload: Dictionary = {
 		"account_id": current_account_id,
@@ -309,11 +435,12 @@ func sync_progress_to_supabase(player: Node, world_map: Node) -> void:
 		"character_id": str(player.get("character_id")),
 		"level": int(player.stats.get("level", 1)),
 		"xp": int(player.stats.get("xp", 0)),
-		"hp": int(player.stats.get("hp", 100)),
-		"max_hp": int(player.stats.get("max_hp", 100)),
-		"attack": int(player.stats.get("attack", 12)),
+		"hp": int(player.stats.get("hp", Balance.BASE_PLAYER_MAX_HP)),
+		"max_hp": int(player.stats.get("max_hp", Balance.BASE_PLAYER_MAX_HP)),
+		"attack": int(player.stats.get("attack", Balance.BASE_PLAYER_ATTACK)),
 		"gold": int(player.stats.get("gold", 0)),
 		"inventory": player.inventory.duplicate(true),
+		"equipment": player.get("equipment").duplicate(true),
 		"last_position": {"x": player.global_position.x, "y": player.global_position.y},
 		"last_latitude": geo.get("latitude", null),
 		"last_longitude": geo.get("longitude", null)
@@ -327,6 +454,19 @@ func _sync_friend_to_backend(friend_name: String) -> void:
 	var account: Dictionary = get_current_account()
 	var headers: Array[String] = _auth_headers(account)
 	await _http_json(HTTPClient.METHOD_POST, BACKEND_BASE_URL + "/friends/add", {"friend_name": friend_name}, headers)
+
+
+func _sync_friend_invite_to_backend(friend_name: String) -> void:
+	var account: Dictionary = get_current_account()
+	var headers: Array[String] = _auth_headers(account)
+	await _http_json(HTTPClient.METHOD_POST, BACKEND_BASE_URL + "/friends/invite", {"friend_name": friend_name}, headers)
+
+
+func _sync_friend_invite_response_to_backend(friend_name: String, accepted: bool) -> void:
+	var account: Dictionary = get_current_account()
+	var headers: Array[String] = _auth_headers(account)
+	var action: String = "accept" if accepted else "decline"
+	await _http_json(HTTPClient.METHOD_POST, BACKEND_BASE_URL + "/friends/invite/respond", {"friend_name": friend_name, "action": action}, headers)
 
 
 func _sync_clan_to_backend(clan_name: String) -> void:
@@ -367,12 +507,19 @@ func _account_from_backend(raw_account: Variant, raw_session: Variant) -> Dictio
 		"character_id": str(data.get("character_id", "viking")),
 		"level": int(data.get("level", 1)),
 		"xp": int(data.get("xp", 0)),
-		"hp": int(data.get("hp", 100)),
-		"max_hp": int(data.get("max_hp", 100)),
-		"attack": int(data.get("attack", 12)),
+		"hp": int(data.get("hp", Balance.BASE_PLAYER_MAX_HP)),
+		"max_hp": int(data.get("max_hp", Balance.BASE_PLAYER_MAX_HP)),
+		"attack": int(data.get("attack", Balance.BASE_PLAYER_ATTACK)),
 		"gold": int(data.get("gold", 0)),
 		"inventory": _array_from_variant(data.get("inventory", [])),
+		"equipment": data.get("equipment", {}),
+		"last_position": data.get("last_position", {}),
+		"last_latitude": data.get("last_latitude", null),
+		"last_longitude": data.get("last_longitude", null),
 		"friends": _array_from_variant(data.get("friends", [])),
+		"friend_invites_received": _array_from_variant(data.get("friend_invites_received", [])),
+		"friend_invites_sent": _array_from_variant(data.get("friend_invites_sent", [])),
+		"notifications": _array_from_variant(data.get("notifications", [])),
 		"clan": data.get("clan", {}),
 		"is_admin": bool(data.get("is_admin", false)) or _is_admin_email(str(data.get("email", data.get("username", "")))),
 		"access_token": str(session.get("access_token", "")),
@@ -484,12 +631,16 @@ func _new_local_account(account_id: String, email: String, password: String, pla
 		"character_id": character_id,
 		"level": 1,
 		"xp": 0,
-		"hp": 100,
-		"max_hp": 100,
-		"attack": 12,
+		"hp": Balance.BASE_PLAYER_MAX_HP,
+		"max_hp": Balance.BASE_PLAYER_MAX_HP,
+		"attack": Balance.BASE_PLAYER_ATTACK,
 		"gold": 0,
-		"inventory": ["Wood", "Wood", "Wood", "Wood", "Wood", "Stone", "Stone", "Stone", "Herb", "Herb", "Mushroom", "Crystal Vial"],
+		"inventory": ["Common Viking Axe", "Wood", "Wood", "Wood", "Wood", "Wood", "Stone", "Stone", "Stone", "Herb", "Herb", "Mushroom", "Crystal Vial"],
+		"equipment": {"weapon": "", "armor": "", "trinket": ""},
 		"friends": [],
+		"friend_invites_received": [],
+		"friend_invites_sent": [],
+		"notifications": [],
 		"clan": {},
 		"is_admin": _is_admin_email(email),
 		"is_guest": false,
@@ -568,6 +719,53 @@ func _get_friends_from_account(account: Dictionary) -> Array:
 		for friend in raw:
 			friends.append(str(friend))
 	return friends
+
+
+func _get_invites_from_account(account: Dictionary, key: String) -> Array:
+	var invites: Array = []
+	var raw: Variant = account.get(key, [])
+	if raw is Array:
+		for invite in raw:
+			var invite_name: String = str(invite).strip_edges()
+			if invite_name != "" and not invites.has(invite_name):
+				invites.append(invite_name)
+	return invites
+
+
+func _find_account_id_by_player_or_email(name_or_email: String) -> String:
+	var clean: String = name_or_email.strip_edges()
+	var clean_email: String = _normalize_email(clean)
+	for account_id in accounts.keys():
+		var account: Dictionary = accounts[account_id] as Dictionary
+		if str(account.get("player_name", "")).to_lower() == clean.to_lower():
+			return str(account_id)
+		if _normalize_email(str(account.get("email", account.get("username", "")))) == clean_email:
+			return str(account_id)
+	return ""
+
+
+func _add_notification(message: String) -> void:
+	if not _has_current_mutable_account():
+		return
+	var account: Dictionary = accounts[current_account_id] as Dictionary
+	var notifications: Array = _notifications_with_message(account, message)
+	account["notifications"] = notifications
+	account["updated_at_unix"] = Time.get_unix_time_from_system()
+	accounts[current_account_id] = account
+	save_accounts()
+	notifications_changed.emit(notifications.duplicate(true))
+
+
+func _notifications_with_message(account: Dictionary, message: String) -> Array:
+	var notifications: Array = _array_from_variant(account.get("notifications", []))
+	notifications.push_front({
+		"message": message,
+		"created_at_unix": Time.get_unix_time_from_system(),
+		"read": false
+	})
+	while notifications.size() > 12:
+		notifications.pop_back()
+	return notifications
 
 
 func _array_from_variant(value: Variant) -> Array:

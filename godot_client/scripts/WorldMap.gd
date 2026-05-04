@@ -21,6 +21,20 @@ const SECTION_WIDTH_TILES: int = 7
 const SECTION_HEIGHT_TILES: int = 5
 const SECTION_LOAD_SECONDS: float = 1.25
 const SECTION_PRELOAD_BORDER: int = 1
+const STRUCTURE_SHEET_PATH: String = "res://art/buildings/buildings_v2.png"
+const STRUCTURE_SIZE: int = 128
+const STRUCTURE_COLUMNS: int = 4
+const STRUCTURE_INDEX: Dictionary = {
+	"Campfire": 0,
+	"Longhouse": 1,
+	"Watchtower": 2,
+	"Rune Stone": 3,
+	"Alchemy Hut": 4,
+	"Palisade": 5,
+	"Dock": 6,
+	"Farmstead": 7,
+	"Shrine": 8
+}
 
 var zoom: int = DEFAULT_ZOOM
 var player: Node2D
@@ -37,6 +51,7 @@ var origin_world_position: Vector2
 var loading_layer: CanvasLayer
 var loading_panel: Panel
 var loading_label: Label
+var structure_texture_cache: Texture2D
 
 
 func _ready() -> void:
@@ -324,7 +339,7 @@ func _on_tile_request_completed(
 			var texture: ImageTexture = ImageTexture.create_from_image(image)
 			if is_instance_valid(sprite):
 				sprite.texture = texture
-				sprite.modulate = Color(0.86, 0.92, 0.86)
+				sprite.modulate = Color.WHITE
 	else:
 		print("Map tile failed: ", tile_key, " HTTP ", response_code)
 	request.queue_free()
@@ -361,11 +376,11 @@ func _draw_fallback_section(section: Vector2i) -> void:
 			rect.size = Vector2(TILE_SIZE, TILE_SIZE)
 			rect.position = tile_to_world(Vector2i(x, y))
 			if (x + y) % 3 == 0:
-				rect.color = Color(0.13, 0.33, 0.17)
+				rect.color = Color(0.095, 0.105, 0.115)
 			elif (x + y) % 3 == 1:
-				rect.color = Color(0.16, 0.42, 0.20)
+				rect.color = Color(0.115, 0.125, 0.135)
 			else:
-				rect.color = Color(0.12, 0.27, 0.16)
+				rect.color = Color(0.075, 0.085, 0.095)
 			fallback_layer.add_child(rect)
 
 
@@ -379,7 +394,7 @@ func _ensure_structures_for_tile(tile: Vector2i) -> void:
 	if structure_nodes.has(structure_key):
 		return
 
-	var types: Array[String] = ["Longhouse", "Rune Stone", "Watchtower", "Dock", "Farmstead", "Shrine"]
+	var types: Array[String] = ["Rune Stone", "Watchtower", "Dock", "Shrine"]
 	var type_name: String = types[seed_value % types.size()]
 	var offset_x: float = 48.0 + float((seed_value / 7) % 150)
 	var offset_y: float = 48.0 + float((seed_value / 19) % 150)
@@ -396,25 +411,35 @@ func _make_structure_marker(type_name: String) -> Node2D:
 	marker.name = "Viking" + type_name.replace(" ", "")
 	marker.z_index = 6
 
-	var icon: ColorRect = ColorRect.new()
-	icon.size = Vector2(20, 20)
-	icon.position = Vector2(-10, -10)
-	match type_name:
-		"Longhouse": icon.color = Color(0.45, 0.24, 0.10)
-		"Rune Stone": icon.color = Color(0.42, 0.42, 0.46)
-		"Watchtower": icon.color = Color(0.35, 0.20, 0.08)
-		"Dock": icon.color = Color(0.25, 0.16, 0.08)
-		"Farmstead": icon.color = Color(0.52, 0.42, 0.16)
-		"Shrine": icon.color = Color(0.30, 0.22, 0.45)
-		_: icon.color = Color(0.4, 0.3, 0.2)
-	marker.add_child(icon)
+	var shadow: Polygon2D = Polygon2D.new()
+	shadow.polygon = PackedVector2Array([
+		Vector2(-21, 8),
+		Vector2(-9, 1),
+		Vector2(14, 1),
+		Vector2(24, 8),
+		Vector2(12, 15),
+		Vector2(-16, 15)
+	])
+	shadow.color = Color(0.0, 0.0, 0.0, 0.36)
+	shadow.z_index = -2
+	marker.add_child(shadow)
 
-	var outline: ColorRect = ColorRect.new()
-	outline.size = Vector2(26, 26)
-	outline.position = Vector2(-13, -13)
-	outline.color = Color(1.0, 0.85, 0.38, 0.26)
+	var outline: Line2D = Line2D.new()
+	outline.width = 2.0
+	outline.default_color = Color(1.0, 0.82, 0.34, 0.42)
+	for i in range(17):
+		var angle: float = TAU * float(i) / 16.0
+		outline.add_point(Vector2(cos(angle) * 24.0, sin(angle) * 12.0 + 5.0))
 	outline.z_index = -1
 	marker.add_child(outline)
+
+	var sprite: Sprite2D = Sprite2D.new()
+	sprite.texture = _get_map_structure_texture(type_name)
+	sprite.centered = true
+	sprite.position = Vector2(0, -8)
+	sprite.scale = Vector2(0.38, 0.38)
+	sprite.z_index = 2
+	marker.add_child(sprite)
 
 	var label: Label = Label.new()
 	label.text = type_name
@@ -428,6 +453,20 @@ func _make_structure_marker(type_name: String) -> Node2D:
 	marker.add_child(label)
 
 	return marker
+
+
+func _get_map_structure_texture(type_name: String) -> Texture2D:
+	if structure_texture_cache == null and ResourceLoader.exists(STRUCTURE_SHEET_PATH):
+		structure_texture_cache = load(STRUCTURE_SHEET_PATH) as Texture2D
+	if structure_texture_cache == null:
+		return null
+	var index: int = int(STRUCTURE_INDEX.get(type_name, 0))
+	var column: int = index % STRUCTURE_COLUMNS
+	var row: int = int(index / STRUCTURE_COLUMNS)
+	var atlas: AtlasTexture = AtlasTexture.new()
+	atlas.atlas = structure_texture_cache
+	atlas.region = Rect2(float(column * STRUCTURE_SIZE), float(row * STRUCTURE_SIZE), float(STRUCTURE_SIZE), float(STRUCTURE_SIZE))
+	return atlas
 
 
 func _tile_key(tile: Vector2i) -> String:
