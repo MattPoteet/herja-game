@@ -9,11 +9,16 @@ signal equipment_changed(equipment: Dictionary)
 const Balance = preload("res://scripts/Balance.gd")
 const SPEED: float = 135.0
 const BOW_SHOT_VISIBLE_SECONDS: float = 0.16
+const FIREBALL_VISIBLE_SECONDS: float = 0.24
 
 const VIKING_WALK_PATH: String = "res://art/characters/viking/viking_walk.png"
 const VIKING_ATTACK_PATH: String = "res://art/characters/viking/viking_attack.png"
 const SHIELD_MAIDEN_WALK_PATH: String = "res://art/characters/shield_maiden/shield_maiden_walk.png"
 const SHIELD_MAIDEN_ATTACK_PATH: String = "res://art/characters/shield_maiden/shield_maiden_attack.png"
+const DRUID_WALK_PATH: String = "res://art/characters/druid/druid_walk.png"
+const DRUID_ATTACK_PATH: String = "res://art/characters/druid/druid_attack.png"
+const MAGE_WALK_PATH: String = "res://art/characters/mage/mage_walk.png"
+const MAGE_ATTACK_PATH: String = "res://art/characters/mage/mage_attack.png"
 
 const SPRITE_COLUMNS: int = 4
 const SPRITE_ROWS: int = 4
@@ -123,6 +128,8 @@ func attack_target(target: Node2D) -> void:
 	_play_attack_animation()
 	if character_id == "shield_maiden":
 		_show_bow_shot(target)
+	elif character_id == "mage":
+		_show_fireball(target)
 	if target.has_method("take_damage"):
 		target.call("take_damage", _attack_damage())
 
@@ -231,6 +238,74 @@ func _show_bow_shot(target: Node2D) -> void:
 	await get_tree().create_timer(BOW_SHOT_VISIBLE_SECONDS).timeout
 	if is_instance_valid(arrow_node):
 		arrow_node.queue_free()
+
+
+func _show_fireball(target: Node2D) -> void:
+	var parent_node: Node = get_parent()
+	if parent_node == null:
+		return
+
+	var direction: Vector2 = facing.normalized()
+	if direction == Vector2.ZERO:
+		direction = Vector2.DOWN
+	var start: Vector2 = global_position + direction * 24.0 + Vector2(0, -34)
+	var end: Vector2 = start + direction * _attack_range()
+	if target != null:
+		end = target.global_position + Vector2(0, -18)
+
+	var fireball: Node2D = Node2D.new()
+	fireball.name = "MageFireball"
+	fireball.global_position = start
+	fireball.z_index = 84
+	parent_node.add_child(fireball)
+
+	var glow: Polygon2D = Polygon2D.new()
+	glow.polygon = PackedVector2Array([
+		Vector2(0, -18),
+		Vector2(14, -10),
+		Vector2(18, 0),
+		Vector2(10, 14),
+		Vector2(0, 18),
+		Vector2(-14, 10),
+		Vector2(-18, 0),
+		Vector2(-10, -14)
+	])
+	glow.color = Color(1.0, 0.28, 0.04, 0.82)
+	fireball.add_child(glow)
+
+	var core: Polygon2D = Polygon2D.new()
+	core.polygon = PackedVector2Array([
+		Vector2(0, -10),
+		Vector2(8, -5),
+		Vector2(10, 0),
+		Vector2(5, 8),
+		Vector2(0, 10),
+		Vector2(-8, 5),
+		Vector2(-10, 0),
+		Vector2(-5, -8)
+	])
+	core.color = Color(1.0, 0.86, 0.20, 0.96)
+	fireball.add_child(core)
+
+	var trail: Line2D = Line2D.new()
+	trail.width = 5.0
+	trail.default_color = Color(1.0, 0.34, 0.04, 0.42)
+	trail.add_point(Vector2(-34, 0))
+	trail.add_point(Vector2(-10, 0))
+	fireball.add_child(trail)
+
+	var travel_direction: Vector2 = (end - start).normalized()
+	if travel_direction != Vector2.ZERO:
+		fireball.rotation = travel_direction.angle()
+	var tween: Tween = create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(fireball, "global_position", end, FIREBALL_VISIBLE_SECONDS)
+	tween.tween_property(fireball, "scale", Vector2(1.35, 1.35), FIREBALL_VISIBLE_SECONDS)
+	tween.tween_property(fireball, "modulate:a", 0.0, FIREBALL_VISIBLE_SECONDS).set_delay(FIREBALL_VISIBLE_SECONDS * 0.55)
+
+	await get_tree().create_timer(FIREBALL_VISIBLE_SECONDS).timeout
+	if is_instance_valid(fireball):
+		fireball.queue_free()
 
 
 func gain_reward(xp_amount: int, gold_amount: int, item_name: String = "") -> void:
@@ -540,13 +615,10 @@ func _setup_name_label() -> void:
 func _build_character_sprite_frames() -> SpriteFrames:
 	var walk_path: String = _walk_sprite_path()
 	var attack_path: String = _attack_sprite_path()
-	if not ResourceLoader.exists(walk_path):
-		return null
-	if not ResourceLoader.exists(attack_path):
-		return null
 	var walk_texture: Texture2D = load(walk_path) as Texture2D
 	var attack_texture: Texture2D = load(attack_path) as Texture2D
 	if walk_texture == null or attack_texture == null:
+		push_warning("Character sprites could not load for %s. Walk: %s Attack: %s" % [character_id, walk_path, attack_path])
 		return null
 	var frames: SpriteFrames = SpriteFrames.new()
 	if frames.has_animation("default"):
@@ -560,20 +632,21 @@ func _build_character_sprite_frames() -> SpriteFrames:
 func _walk_sprite_path() -> String:
 	match character_id:
 		"shield_maiden": return SHIELD_MAIDEN_WALK_PATH
+		"druid": return DRUID_WALK_PATH
+		"mage": return MAGE_WALK_PATH
 		_: return VIKING_WALK_PATH
 
 
 func _attack_sprite_path() -> String:
 	match character_id:
 		"shield_maiden": return SHIELD_MAIDEN_ATTACK_PATH
+		"druid": return DRUID_ATTACK_PATH
+		"mage": return MAGE_ATTACK_PATH
 		_: return VIKING_ATTACK_PATH
 
 
 func _character_modulate() -> Color:
-	match character_id:
-		"druid": return Color(0.82, 1.08, 0.82)
-		"mage": return Color(0.82, 0.90, 1.15)
-		_: return Color.WHITE
+	return Color.WHITE
 
 
 func _add_directional_animations(frames: SpriteFrames, texture: Texture2D, prefix: String, columns_to_use: int, loop: bool, speed: float) -> void:

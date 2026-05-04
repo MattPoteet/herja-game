@@ -1,7 +1,6 @@
 extends CanvasLayer
 
 signal admin_teleport_requested(player_name: String)
-
 var account_manager: Node
 var player: Node
 

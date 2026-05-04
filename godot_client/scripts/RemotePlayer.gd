@@ -2,6 +2,8 @@ extends Node2D
 
 const VIKING_WALK_PATH: String = "res://art/characters/viking/viking_walk.png"
 const SHIELD_MAIDEN_WALK_PATH: String = "res://art/characters/shield_maiden/shield_maiden_walk.png"
+const DRUID_WALK_PATH: String = "res://art/characters/druid/druid_walk.png"
+const MAGE_WALK_PATH: String = "res://art/characters/mage/mage_walk.png"
 const SPRITE_COLUMNS: int = 4
 const SPRITE_ROWS: int = 4
 const SPRITE_SCALE: Vector2 = Vector2(0.18, 0.18)
@@ -97,10 +99,7 @@ func _apply_character_style() -> void:
 		if sprite_frames != null:
 			animated_sprite.sprite_frames = sprite_frames
 			loaded_character_id = character_id
-	match character_id:
-		"druid": animated_sprite.modulate = Color(0.82, 1.08, 0.82, 0.82)
-		"mage": animated_sprite.modulate = Color(0.82, 0.90, 1.15, 0.82)
-		_: animated_sprite.modulate = Color(1.0, 1.0, 1.0, 0.82)
+	animated_sprite.modulate = Color(1.0, 1.0, 1.0, 0.82)
 
 
 func _update_direction(delta_position: Vector2) -> void:
@@ -129,10 +128,9 @@ func _update_animation() -> void:
 
 func _build_sprite_frames() -> SpriteFrames:
 	var walk_path: String = _walk_sprite_path()
-	if not ResourceLoader.exists(walk_path):
-		return null
 	var walk_texture: Texture2D = load(walk_path) as Texture2D
 	if walk_texture == null:
+		push_warning("Remote character sprite could not load for %s. Walk: %s" % [character_id, walk_path])
 		return null
 	var frames: SpriteFrames = SpriteFrames.new()
 	if frames.has_animation("default"):
@@ -145,6 +143,8 @@ func _build_sprite_frames() -> SpriteFrames:
 func _walk_sprite_path() -> String:
 	match character_id:
 		"shield_maiden": return SHIELD_MAIDEN_WALK_PATH
+		"druid": return DRUID_WALK_PATH
+		"mage": return MAGE_WALK_PATH
 		_: return VIKING_WALK_PATH
 
 
