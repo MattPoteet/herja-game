@@ -82,8 +82,9 @@ a:hover {
 	display: grid;
 	align-items: end;
 	background:
-		linear-gradient(180deg, rgba(11, 16, 20, 0.10) 0%, rgba(11, 16, 20, 0.72) 62%, rgba(11, 16, 20, 1.0) 100%),
-		url("play/index.png") center / cover no-repeat;
+		linear-gradient(90deg, rgba(11, 16, 20, 0.90) 0%, rgba(11, 16, 20, 0.56) 42%, rgba(11, 16, 20, 0.16) 100%),
+		linear-gradient(180deg, rgba(11, 16, 20, 0.06) 0%, rgba(11, 16, 20, 0.60) 72%, rgba(11, 16, 20, 1.0) 100%),
+		url("assets/herja-hero-key-art.png") center / cover no-repeat;
 }
 
 .hero-inner {
@@ -121,6 +122,23 @@ h1 {
 	display: flex;
 	gap: 12px;
 	flex-wrap: wrap;
+}
+
+.platforms {
+	display: flex;
+	gap: 10px;
+	flex-wrap: wrap;
+	margin-top: 18px;
+}
+
+.platform {
+	border: 1px solid rgba(216, 180, 93, 0.42);
+	background: rgba(17, 25, 34, 0.78);
+	border-radius: 6px;
+	color: #f1dfad;
+	font-size: 13px;
+	font-weight: 700;
+	padding: 7px 10px;
 }
 
 .button {
@@ -176,6 +194,30 @@ h1 {
 .section p,
 .legal li {
 	color: var(--muted);
+}
+
+.release-list {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	gap: 14px;
+	margin-top: 18px;
+}
+
+.release-item {
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	padding: 16px;
+	background: var(--panel);
+}
+
+.release-item strong {
+	display: block;
+	margin-bottom: 4px;
+}
+
+.release-item span {
+	color: var(--muted);
+	font-size: 14px;
 }
 
 .notice {
@@ -234,6 +276,10 @@ h1 {
 	}
 
 	.grid {
+		grid-template-columns: 1fr;
+	}
+
+	.release-list {
 		grid-template-columns: 1fr;
 	}
 }
