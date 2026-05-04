@@ -24,8 +24,13 @@ This build adds a local prototype account flow to the Godot client.
 - Press F5 to manually save.
 - Autosave runs every few seconds.
 - Press O to open friends/clan menu.
-- Friends, pending friend invites, notifications, and clan are saved locally for the selected account.
+- Press K to open the individual class skill tree.
+- Each character earns 1 individual skill point per level and spends those points only in that character class tree.
+- Skill unlocks are saved with the player profile and are separate from clans.
+- Friends, pending friend invites, notifications, and clan data are saved locally for the selected account.
 - The social panel can send friend invites, accept incoming invites, decline incoming invites, and remove friends.
+- The social panel can create a clan for 10,000 gold, choose one clan perk, join/leave clans, disband a leader-owned clan, challenge another local clan to war, accept/decline war challenges, and schedule a first-pass clan battle by Unix start time.
+- Clan perks currently apply on the client to XP, gold, combat damage, boss damage, or damage reduction while the player is in the clan.
 - Notifications appear in the social panel and briefly in the HUD status line.
 
 ## Current limitation
@@ -41,6 +46,9 @@ The backend SQL now includes starter tables for:
 - `friend_invites`
 - `clans`
 - `clan_members`
+- `clan_wars`
+- `clan_battles`
+- `clan_battle_participants`
 
 Those tables are in:
 
@@ -55,4 +63,5 @@ WASD / Arrows = move
 Space = attack
 F5 = save
 O = friends/clan panel
+K = skill tree
 ```

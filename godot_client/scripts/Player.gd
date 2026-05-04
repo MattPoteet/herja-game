@@ -5,8 +5,11 @@ signal xp_changed(current: int, level: int)
 signal inventory_changed(items: Array)
 signal profile_changed(player_name: String, character_id: String)
 signal equipment_changed(equipment: Dictionary)
+signal skills_changed(skill_state: Dictionary)
 
 const Balance = preload("res://scripts/Balance.gd")
+const ClanConfig = preload("res://scripts/ClanConfig.gd")
+const SkillConfig = preload("res://scripts/SkillConfig.gd")
 const SPEED: float = 135.0
 const BOW_SHOT_VISIBLE_SECONDS: float = 0.16
 const FIREBALL_VISIBLE_SECONDS: float = 0.24
@@ -46,6 +49,13 @@ var facing_direction: String = "down"
 var is_attacking: bool = false
 var spawn_position: Vector2 = Vector2.ZERO
 var character_id: String = "viking"
+var clan_data: Dictionary = {}
+var skill_state: Dictionary = {
+	"available_skill_points": 0,
+	"total_skill_points_earned": 0,
+	"unlocked_skills": {}
+}
+var skill_cooldowns: Dictionary = {}
 var virtual_move_vector: Vector2 = Vector2.ZERO
 var virtual_attack_requested: bool = false
 var has_move_target: bool = false
@@ -93,6 +103,7 @@ func _physics_process(_delta: float) -> void:
 	if Input.is_action_just_pressed("attack") or virtual_attack_requested:
 		virtual_attack_requested = false
 		attack_nearest_enemy()
+	_tick_skill_cooldowns(_delta)
 
 
 func attack_nearest_enemy() -> void:
@@ -133,7 +144,7 @@ func attack_target(target: Node2D) -> void:
 	elif character_id == "mage":
 		_show_fireball(target)
 	if target.has_method("take_damage"):
-		target.call("take_damage", _attack_damage())
+		target.call("take_damage", _attack_damage(target))
 
 
 func set_move_target(target_position: Vector2) -> void:
@@ -149,8 +160,10 @@ func set_attack_target(target: Node2D) -> void:
 	has_move_target = false
 
 
-func _attack_damage() -> int:
-	return Balance.damage_for_character(character_id, total_attack())
+func _attack_damage(target: Node = null) -> int:
+	var damage: int = Balance.damage_for_character(character_id, total_attack())
+	var is_boss: bool = target != null and bool(target.get_meta("dungeon_boss", false) or target.get_meta("world_boss", false))
+	return ClanConfig.apply_clan_damage_bonus(self, damage, is_boss)
 
 
 func _attack_range() -> float:
@@ -311,6 +324,8 @@ func _show_fireball(target: Node2D) -> void:
 
 
 func gain_reward(xp_amount: int, gold_amount: int, item_name: String = "") -> void:
+	xp_amount = ClanConfig.apply_clan_xp_bonus(self, xp_amount)
+	gold_amount = ClanConfig.apply_clan_gold_bonus(self, gold_amount)
 	stats["xp"] += xp_amount
 	stats["gold"] += gold_amount
 	if item_name != "":
@@ -319,10 +334,7 @@ func gain_reward(xp_amount: int, gold_amount: int, item_name: String = "") -> vo
 	while int(stats["xp"]) >= Balance.xp_required_for_level(int(stats["level"])):
 		var current_level: int = int(stats["level"])
 		stats["xp"] = int(stats["xp"]) - Balance.xp_required_for_level(current_level)
-		stats["level"] = int(stats["level"]) + 1
-		stats["max_hp"] = int(stats["max_hp"]) + Balance.max_hp_gain_for_level(int(stats["level"]))
-		stats["attack"] = int(stats["attack"]) + Balance.attack_gain_for_level(int(stats["level"]))
-		stats["hp"] = int(stats["max_hp"])
+		_level_up_once()
 	xp_changed.emit(int(stats["xp"]), int(stats["level"]))
 	health_changed.emit(int(stats["hp"]), int(stats["max_hp"]))
 
@@ -348,8 +360,17 @@ func apply_account_profile(account: Dictionary) -> void:
 		inventory = (account.get("inventory") as Array).duplicate(true)
 	if account.has("equipment") and account.get("equipment") is Dictionary:
 		equipment = _clean_equipment(account.get("equipment") as Dictionary)
+	if account.has("clan") and account.get("clan") is Dictionary:
+		clan_data = (account.get("clan") as Dictionary).duplicate(true)
+	if account.has("skills") and account.get("skills") is Dictionary:
+		skill_state = _clean_skill_state(account.get("skills") as Dictionary)
 	_apply_character_style()
 	refresh_after_load()
+
+
+func set_clan_data(new_clan_data: Dictionary) -> void:
+	clan_data = new_clan_data.duplicate(true)
+	profile_changed.emit(str(stats.get("name", "Viking")), character_id)
 
 
 func set_character(new_character_id: String) -> void:
@@ -375,6 +396,7 @@ func refresh_after_load() -> void:
 	xp_changed.emit(int(stats.get("xp", 0)), int(stats.get("level", 1)))
 	inventory_changed.emit(inventory)
 	equipment_changed.emit(equipment.duplicate(true))
+	skills_changed.emit(skill_state.duplicate(true))
 	profile_changed.emit(str(stats.get("name", "Viking")), character_id)
 
 
@@ -403,11 +425,111 @@ func add_items(items: Array) -> void:
 
 
 func total_attack() -> int:
-	return int(stats.get("attack", Balance.BASE_PLAYER_ATTACK)) + _equipment_attack_bonus()
+	return int(stats.get("attack", Balance.BASE_PLAYER_ATTACK)) + _equipment_attack_bonus() + int(SkillConfig.passive_bonus(skill_state, character_id, "attack"))
 
 
 func total_defense() -> int:
-	return _equipment_defense_bonus()
+	return _equipment_defense_bonus() + int(SkillConfig.passive_bonus(skill_state, character_id, "defense"))
+
+
+func available_skill_points() -> int:
+	return int(skill_state.get("available_skill_points", 0))
+
+
+func unlocked_skill_rank(skill_id: String) -> int:
+	return SkillConfig.skill_rank(skill_state, skill_id)
+
+
+func can_unlock_skill(skill_id: String) -> Dictionary:
+	var skill: Dictionary = SkillConfig.skill_definition(character_id, skill_id)
+	if skill.is_empty():
+		return {"ok": false, "error": "This skill is not available for your class."}
+	if available_skill_points() < int(skill.get("cost", 1)):
+		return {"ok": false, "error": "Not enough skill points."}
+	if int(stats.get("level", 1)) < int(skill.get("required_level", 1)):
+		return {"ok": false, "error": "Requires level %d." % int(skill.get("required_level", 1))}
+	var current_rank: int = unlocked_skill_rank(skill_id)
+	if current_rank >= int(skill.get("max_rank", 1)):
+		return {"ok": false, "error": "Skill is already at max rank."}
+	var prerequisites: Dictionary = skill.get("prerequisites", {}) as Dictionary
+	for prereq_id in prerequisites.keys():
+		var required_rank: int = int(prerequisites[prereq_id])
+		if unlocked_skill_rank(str(prereq_id)) < required_rank:
+			var prereq: Dictionary = SkillConfig.skill_definition(character_id, str(prereq_id))
+			return {"ok": false, "error": "Requires %s Rank %d." % [str(prereq.get("name", prereq_id)), required_rank]}
+	return {"ok": true}
+
+
+func unlock_skill(skill_id: String) -> Dictionary:
+	var check: Dictionary = can_unlock_skill(skill_id)
+	if not bool(check.get("ok", false)):
+		return check
+	var skill: Dictionary = SkillConfig.skill_definition(character_id, skill_id)
+	var unlocked: Dictionary = skill_state.get("unlocked_skills", {}) as Dictionary
+	unlocked[skill_id] = int(unlocked.get(skill_id, 0)) + 1
+	skill_state["unlocked_skills"] = unlocked
+	skill_state["available_skill_points"] = available_skill_points() - int(skill.get("cost", 1))
+	_apply_skill_unlock_effects(skill)
+	skills_changed.emit(skill_state.duplicate(true))
+	health_changed.emit(int(stats["hp"]), int(stats["max_hp"]))
+	return {"ok": true, "skill": skill}
+
+
+func reset_skill_tree() -> Dictionary:
+	if not SkillConfig.RESPEC_ENABLED:
+		return {"ok": false, "error": "Respec is disabled."}
+	if int(stats.get("gold", 0)) < SkillConfig.RESPEC_GOLD_COST:
+		return {"ok": false, "error": "You need %d gold to reset skills." % SkillConfig.RESPEC_GOLD_COST}
+	var max_hp_bonus: int = int(SkillConfig.passive_bonus(skill_state, character_id, "max_hp"))
+	stats["gold"] = int(stats.get("gold", 0)) - SkillConfig.RESPEC_GOLD_COST
+	stats["max_hp"] = max(Balance.BASE_PLAYER_MAX_HP, int(stats.get("max_hp", Balance.BASE_PLAYER_MAX_HP)) - max_hp_bonus)
+	stats["hp"] = min(int(stats.get("hp", stats["max_hp"])), int(stats["max_hp"]))
+	skill_state["available_skill_points"] = int(skill_state.get("total_skill_points_earned", 0))
+	skill_state["unlocked_skills"] = {}
+	skills_changed.emit(skill_state.duplicate(true))
+	health_changed.emit(int(stats["hp"]), int(stats["max_hp"]))
+	return {"ok": true}
+
+
+func active_skill_ids() -> Array[String]:
+	var ids: Array[String] = []
+	for skill in SkillConfig.skills_for_class(character_id):
+		var data: Dictionary = skill as Dictionary
+		var kind: String = str(data.get("type", ""))
+		if kind == SkillConfig.SKILL_TYPE_ACTIVE or kind == SkillConfig.SKILL_TYPE_SPECIAL or kind == SkillConfig.SKILL_TYPE_CAPSTONE:
+			if unlocked_skill_rank(str(data.get("id", ""))) > 0:
+				ids.append(str(data.get("id", "")))
+	return ids
+
+
+func use_skill_ability(skill_id: String) -> Dictionary:
+	if unlocked_skill_rank(skill_id) <= 0:
+		return {"ok": false, "error": "Unlock this skill first."}
+	var skill: Dictionary = SkillConfig.skill_definition(character_id, skill_id)
+	if skill.is_empty():
+		return {"ok": false, "error": "This skill is not available for your class."}
+	var cooldown_left: float = float(skill_cooldowns.get(skill_id, 0.0))
+	if cooldown_left > 0.0:
+		return {"ok": false, "error": "%s ready in %.1fs." % [str(skill.get("name", "Skill")), cooldown_left]}
+	var effects: Dictionary = skill.get("effects", {}) as Dictionary
+	if effects.has("heal"):
+		var healing: int = int(effects.get("heal", 0)) * max(1, unlocked_skill_rank(skill_id))
+		stats["hp"] = min(int(stats.get("max_hp", Balance.BASE_PLAYER_MAX_HP)), int(stats.get("hp", 0)) + healing)
+		health_changed.emit(int(stats["hp"]), int(stats["max_hp"]))
+		_show_floating_text("+%d" % healing, Color(0.45, 1.0, 0.50), Vector2(0, -92))
+	elif effects.has("area_damage_multiplier"):
+		_damage_nearby_enemies(float(effects.get("area_damage_multiplier", 1.0)) * float(max(1, unlocked_skill_rank(skill_id))))
+	elif effects.has("single_damage_multiplier"):
+		var target_enemy: Node2D = active_attack_target if active_attack_target != null and is_instance_valid(active_attack_target) else _nearest_enemy_in_range()
+		if target_enemy != null and target_enemy.has_method("take_damage"):
+			target_enemy.call("take_damage", int(round(float(_attack_damage(target_enemy)) * float(effects.get("single_damage_multiplier", 1.0)))))
+		else:
+			return {"ok": false, "error": "No enemy in range."}
+	elif effects.has("temporary_attack") or effects.has("temporary_defense"):
+		_show_floating_text(str(skill.get("name", "Skill")), Color(0.95, 0.82, 0.38), Vector2(0, -96))
+		# TODO: replace this placeholder with a timed buff system once Herja has one.
+	skill_cooldowns[skill_id] = SkillConfig.cooldown_for_skill(skill_state, character_id, skill_id)
+	return {"ok": true}
 
 
 func equip_item(item_name: String) -> bool:
@@ -506,6 +628,7 @@ func use_item(item_name: String) -> bool:
 
 func take_damage(amount: int) -> void:
 	var damage: int = max(0, amount - total_defense())
+	damage = ClanConfig.apply_clan_damage_taken(self, damage)
 	if damage <= 0:
 		_show_floating_text("Blocked", Color(0.58, 0.82, 1.0), Vector2(0, -88))
 		return
@@ -524,12 +647,79 @@ func _gain_xp(xp_amount: int) -> void:
 	while int(stats["xp"]) >= Balance.xp_required_for_level(int(stats["level"])):
 		var current_level: int = int(stats["level"])
 		stats["xp"] = int(stats["xp"]) - Balance.xp_required_for_level(current_level)
-		stats["level"] = int(stats["level"]) + 1
-		stats["max_hp"] = int(stats["max_hp"]) + Balance.max_hp_gain_for_level(int(stats["level"]))
-		stats["attack"] = int(stats["attack"]) + Balance.attack_gain_for_level(int(stats["level"]))
-		stats["hp"] = int(stats["max_hp"])
+		_level_up_once()
 	xp_changed.emit(int(stats["xp"]), int(stats["level"]))
 	health_changed.emit(int(stats["hp"]), int(stats["max_hp"]))
+
+
+func _level_up_once() -> void:
+	stats["level"] = int(stats["level"]) + 1
+	stats["max_hp"] = int(stats["max_hp"]) + Balance.max_hp_gain_for_level(int(stats["level"]))
+	stats["attack"] = int(stats["attack"]) + Balance.attack_gain_for_level(int(stats["level"]))
+	stats["hp"] = int(stats["max_hp"])
+	_grant_skill_points(SkillConfig.SKILL_POINTS_PER_LEVEL)
+
+
+func _grant_skill_points(amount: int) -> void:
+	if amount <= 0:
+		return
+	skill_state["available_skill_points"] = available_skill_points() + amount
+	skill_state["total_skill_points_earned"] = int(skill_state.get("total_skill_points_earned", 0)) + amount
+	skills_changed.emit(skill_state.duplicate(true))
+
+
+func _apply_skill_unlock_effects(skill: Dictionary) -> void:
+	var effects: Dictionary = skill.get("effects", {}) as Dictionary
+	if effects.has("max_hp"):
+		var gain: int = int(effects.get("max_hp", 0))
+		stats["max_hp"] = int(stats.get("max_hp", Balance.BASE_PLAYER_MAX_HP)) + gain
+		stats["hp"] = min(int(stats["max_hp"]), int(stats.get("hp", stats["max_hp"])) + gain)
+
+
+func _damage_nearby_enemies(multiplier: float) -> void:
+	var base_damage: int = max(1, int(round(float(_attack_damage()) * multiplier)))
+	for enemy in get_tree().get_nodes_in_group("enemies"):
+		if not is_instance_valid(enemy) or not enemy is Node2D:
+			continue
+		var enemy_node: Node2D = enemy as Node2D
+		if not enemy_node.visible:
+			continue
+		if global_position.distance_to(enemy_node.global_position) <= _attack_range() * 1.65 and enemy.has_method("take_damage"):
+			enemy.call("take_damage", base_damage)
+
+
+func _nearest_enemy_in_range() -> Node2D:
+	var closest: Node2D = null
+	var closest_distance: float = _attack_range() * 1.25
+	for enemy in get_tree().get_nodes_in_group("enemies"):
+		if not is_instance_valid(enemy) or not enemy is Node2D:
+			continue
+		var enemy_node: Node2D = enemy as Node2D
+		if not enemy_node.visible:
+			continue
+		var distance: float = global_position.distance_to(enemy_node.global_position)
+		if distance < closest_distance:
+			closest_distance = distance
+			closest = enemy_node
+	return closest
+
+
+func _tick_skill_cooldowns(delta: float) -> void:
+	for skill_id in skill_cooldowns.keys():
+		skill_cooldowns[skill_id] = max(0.0, float(skill_cooldowns[skill_id]) - delta)
+
+
+func _clean_skill_state(raw: Dictionary) -> Dictionary:
+	var unlocked: Dictionary = {}
+	var raw_unlocked: Variant = raw.get("unlocked_skills", {})
+	if raw_unlocked is Dictionary:
+		for skill_id in (raw_unlocked as Dictionary).keys():
+			unlocked[str(skill_id)] = max(0, int((raw_unlocked as Dictionary)[skill_id]))
+	return {
+		"available_skill_points": max(0, int(raw.get("available_skill_points", 0))),
+		"total_skill_points_earned": max(0, int(raw.get("total_skill_points_earned", 0))),
+		"unlocked_skills": unlocked
+	}
 
 
 func respawn() -> void:

@@ -35,6 +35,7 @@ func save_player(player: Node, world_map: Node, account_manager: Node = null) ->
 		"gold": int(player.stats.get("gold", 0)),
 		"inventory": player.inventory.duplicate(true),
 		"equipment": player.get("equipment").duplicate(true),
+		"skills": player.get("skill_state").duplicate(true) if player.get("skill_state") is Dictionary else {},
 		"friends": account.get("friends", []),
 		"clan": account.get("clan", {}),
 		"position": {
@@ -129,6 +130,8 @@ func _apply_data_to_player(player: Node, world_map: Node, data: Dictionary) -> v
 	player.inventory = loaded_inventory
 	if data.has("equipment") and data.get("equipment") is Dictionary:
 		player.set("equipment", (data.get("equipment") as Dictionary).duplicate(true))
+	if data.has("skills") and data.get("skills") is Dictionary:
+		player.set("skill_state", (data.get("skills") as Dictionary).duplicate(true))
 
 	var pos: Vector2 = player.global_position
 	var position_data: Variant = data.get("position", {})
@@ -157,7 +160,8 @@ func _data_from_account_progress(account: Dictionary) -> Dictionary:
 		"attack": int(account.get("attack", Balance.BASE_PLAYER_ATTACK)),
 		"gold": int(account.get("gold", 0)),
 		"inventory": account.get("inventory", []),
-		"equipment": account.get("equipment", {})
+		"equipment": account.get("equipment", {}),
+		"skills": account.get("skills", {})
 	}
 
 	var last_position: Variant = account.get("last_position", {})

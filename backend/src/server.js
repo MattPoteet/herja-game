@@ -31,6 +31,48 @@ const supabaseAuth = SUPABASE_URL && SUPABASE_ANON_KEY
 
 const players = new Map();
 const CHAT_MESSAGE_MAX_LENGTH = 180;
+const CLAN_CREATE_COST = 10000;
+const MAX_CLAN_MEMBERS = 100;
+const CLAN_PERKS = new Set(['xp_boost', 'gold_boost', 'hit_bonus', 'defense_bonus', 'boss_hunter']);
+const MAX_ACTIVE_WARS = 3;
+const BATTLE_PREP_SECONDS = 30 * 60;
+const BATTLE_DURATION_SECONDS = 15 * 60;
+const BATTLE_POINTS_PER_KILL = 1;
+const WINNER_XP_REWARD = 650;
+const WINNER_GOLD_REWARD = 300;
+const LOSER_XP_REWARD = 250;
+const LOSER_GOLD_REWARD = 90;
+const SKILL_POINTS_PER_LEVEL = 1;
+const SKILL_DEFINITIONS = {
+  viking: [
+    ['warriors_strength', 2, 3, {}], ['iron_skin', 3, 3, {}], ['battle_hunger', 5, 2, { warriors_strength: 1 }],
+    ['axe_mastery', 6, 3, { warriors_strength: 2 }], ['berserker_endurance', 7, 3, { iron_skin: 1 }],
+    ['cleave', 4, 2, {}], ['shield_breaker', 8, 2, { cleave: 1 }], ['war_cry', 10, 1, { warriors_strength: 2 }],
+    ['berserker_charge', 14, 1, { shield_breaker: 1 }], ['odins_wrath', 18, 1, { berserker_charge: 1 }],
+    ['wrath_of_the_north', 25, 1, { odins_wrath: 1, berserker_endurance: 2 }]
+  ],
+  mage: [
+    ['arcane_focus', 2, 3, {}], ['mana_flow', 4, 2, {}], ['elemental_mastery', 6, 3, { arcane_focus: 1 }],
+    ['spell_precision', 7, 2, { arcane_focus: 1 }], ['mystic_shielding', 8, 3, {}], ['fireball', 3, 2, {}],
+    ['frost_nova', 9, 2, { fireball: 1 }], ['chain_lightning', 12, 2, { elemental_mastery: 1 }],
+    ['meteor_strike', 16, 1, { chain_lightning: 1 }], ['blizzard', 20, 1, { frost_nova: 1 }],
+    ['archmage_ascension', 25, 1, { meteor_strike: 1, blizzard: 1 }]
+  ],
+  druid: [
+    ['natures_blessing', 2, 3, {}], ['thorn_skin', 4, 3, {}], ['wild_growth', 5, 3, { natures_blessing: 1 }],
+    ['spirit_bond', 7, 2, {}], ['herbal_wisdom', 8, 2, { natures_blessing: 1 }], ['root_snare', 3, 2, {}],
+    ['healing_bloom', 6, 2, { natures_blessing: 1 }], ['poison_spores', 10, 2, { root_snare: 1 }],
+    ['entangling_forest', 15, 1, { poison_spores: 1 }], ['moonwell', 18, 1, { healing_bloom: 2 }],
+    ['avatar_of_the_wild', 25, 1, { entangling_forest: 1, moonwell: 1 }]
+  ],
+  shield_maiden: [
+    ['bow_discipline', 2, 3, {}], ['eagle_eye', 4, 3, {}], ['hunters_footwork', 6, 2, { bow_discipline: 1 }],
+    ['fletchers_craft', 7, 3, { eagle_eye: 1 }], ['rangers_resolve', 9, 2, { hunters_footwork: 1 }],
+    ['quick_shot', 3, 2, {}], ['pinning_arrow', 8, 2, { quick_shot: 1 }],
+    ['arrow_volley', 10, 2, { fletchers_craft: 1 }], ['falcon_dive', 15, 1, { pinning_arrow: 1 }],
+    ['storm_of_arrows', 18, 1, { arrow_volley: 1 }], ['valkyrie_marksman', 25, 1, { falcon_dive: 1, storm_of_arrows: 1 }]
+  ]
+};
 
 function requireSupabase(res) {
   if (!supabaseAdmin || !supabaseAuth) {
@@ -42,6 +84,84 @@ function requireSupabase(res) {
 
 function isAdminEmail(email) {
   return ADMIN_EMAILS.includes(String(email || '').trim().toLowerCase());
+}
+
+function cleanClanName(rawName) {
+  return String(rawName || '').trim().slice(0, 24);
+}
+
+function validateClanName(name) {
+  if (name.length < 3) return 'Clan name must be at least 3 characters.';
+  if (name.length > 24) return 'Clan name must be 24 characters or less.';
+  const lowered = name.toLowerCase();
+  if (['admin', 'mod', 'owner', 'null', 'test'].some(word => lowered.includes(word))) return 'Choose a different clan name.';
+  return '';
+}
+
+function validPerkType(perkType) {
+  return CLAN_PERKS.has(String(perkType || '')) ? String(perkType) : 'xp_boost';
+}
+
+function skillDefinition(classType, skillId) {
+  const rows = SKILL_DEFINITIONS[classType] || [];
+  const row = rows.find(item => item[0] === skillId);
+  if (!row) return null;
+  return { id: row[0], requiredLevel: row[1], maxRank: row[2], prerequisites: row[3] || {} };
+}
+
+function cleanSkillState(raw) {
+  const state = raw && typeof raw === 'object' ? raw : {};
+  const unlocked = state.unlocked_skills && typeof state.unlocked_skills === 'object' ? state.unlocked_skills : {};
+  return {
+    available_skill_points: Math.max(0, Number(state.available_skill_points || 0)),
+    total_skill_points_earned: Math.max(0, Number(state.total_skill_points_earned || 0)),
+    unlocked_skills: Object.fromEntries(Object.entries(unlocked).map(([key, value]) => [key, Math.max(0, Number(value || 0))]))
+  };
+}
+
+async function publicClan(clan, role = '') {
+  if (!clan) return {};
+  const cleanRole = String(role || '').toLowerCase() === 'founder' ? 'Leader' : role;
+  const { count } = await supabaseAdmin
+    .from('clan_members')
+    .select('id', { count: 'exact', head: true })
+    .eq('clan_id', clan.id);
+  return {
+    id: clan.id,
+    name: clan.name,
+    role: cleanRole,
+    leader_id: clan.leader_account_id || clan.founder_account_id,
+    perk_type: clan.perk_type || 'xp_boost',
+    member_count: count || 0,
+    max_members: clan.max_members || MAX_CLAN_MEMBERS,
+    wins: clan.wins || 0,
+    losses: clan.losses || 0,
+    draws: clan.draws || 0,
+    reputation: clan.reputation || 0
+  };
+}
+
+async function clanMembership(accountId) {
+  const { data, error } = await supabaseAdmin
+    .from('clan_members')
+    .select('role, clans(*)')
+    .eq('account_id', accountId)
+    .maybeSingle();
+  if (error || !data?.clans) return { clan: null, role: '' };
+  return { clan: data.clans, role: data.role || 'Member' };
+}
+
+async function requireClanLeader(user, res) {
+  const membership = await clanMembership(user.id);
+  if (!membership.clan) {
+    res.status(400).json({ error: 'You are not in a clan.' });
+    return null;
+  }
+  if (String(membership.role || '').toLowerCase() !== 'leader') {
+    res.status(403).json({ error: 'Only clan leaders can do that.' });
+    return null;
+  }
+  return membership;
 }
 
 function publicAccount(row, session = null, friends = [], clan = {}, friendInvitesReceived = [], friendInvitesSent = []) {
@@ -59,6 +179,7 @@ function publicAccount(row, session = null, friends = [], clan = {}, friendInvit
     attack: row.attack ?? 12,
     gold: row.gold ?? 0,
     inventory: row.inventory ?? [],
+    skills: row.skills ?? { available_skill_points: 0, total_skill_points_earned: 0, unlocked_skills: {} },
     last_position: row.last_position ?? {},
     last_latitude: row.last_latitude ?? null,
     last_longitude: row.last_longitude ?? null,
@@ -85,7 +206,7 @@ async function getUserFromBearer(req) {
 async function getSocial(accountId) {
   const [{ data: friendRows }, { data: clanRows }, { data: receivedRows }, { data: sentRows }] = await Promise.all([
     supabaseAdmin.from('friendships').select('friend_name').eq('account_id', accountId).eq('status', 'accepted'),
-    supabaseAdmin.from('clan_members').select('role, clans(id, name)').eq('account_id', accountId).maybeSingle(),
+    supabaseAdmin.from('clan_members').select('role, clans(*)').eq('account_id', accountId).maybeSingle(),
     supabaseAdmin.from('friend_invites').select('sender_name').eq('receiver_account_id', accountId).eq('status', 'pending'),
     supabaseAdmin.from('friend_invites').select('receiver_name').eq('sender_account_id', accountId).eq('status', 'pending')
   ]);
@@ -95,7 +216,7 @@ async function getSocial(accountId) {
   const friendInvitesSent = Array.isArray(sentRows) ? sentRows.map(row => row.receiver_name).filter(Boolean) : [];
   let clan = {};
   if (clanRows?.clans) {
-    clan = { id: clanRows.clans.id, name: clanRows.clans.name, role: clanRows.role || 'Member' };
+    clan = await publicClan(clanRows.clans, clanRows.role || 'Member');
   }
   return { friends, clan, friendInvitesReceived, friendInvitesSent };
 }
@@ -201,6 +322,35 @@ app.post('/progress/save', async (req, res) => {
   if (!requireSupabase(res)) return;
   const user = await getUserFromBearer(req);
   if (!user) return res.status(401).json({ error: 'Invalid or missing access token.' });
+  const { data: existingProfile } = await supabaseAdmin
+    .from('game_accounts')
+    .select('level, skills')
+    .eq('id', user.id)
+    .maybeSingle();
+  const previousLevel = Number(existingProfile?.level || 1);
+  const nextLevel = Number(req.body.level || 1);
+  const previousSkills = cleanSkillState(existingProfile?.skills);
+  const levelGain = Math.max(0, nextLevel - previousLevel);
+  const incomingSkills = cleanSkillState(req.body.skills);
+  const spentRanks = Object.values(incomingSkills.unlocked_skills).reduce((sum, rank) => sum + Number(rank || 0), 0);
+  const earned = Math.max(previousSkills.total_skill_points_earned + levelGain, Math.max(0, nextLevel - 1) * SKILL_POINTS_PER_LEVEL);
+  if (spentRanks > earned) return res.status(400).json({ error: 'Skill state spends more points than this character has earned.' });
+  for (const [skillId, rank] of Object.entries(incomingSkills.unlocked_skills)) {
+    const skill = skillDefinition(String(req.body.character_id || 'viking'), skillId);
+    if (!skill) return res.status(400).json({ error: 'Skill state contains a skill from another class.' });
+    if (Number(rank || 0) > skill.maxRank) return res.status(400).json({ error: 'Skill state exceeds a skill max rank.' });
+    if (nextLevel < skill.requiredLevel) return res.status(400).json({ error: `Requires level ${skill.requiredLevel}.` });
+    for (const [prereqId, requiredRank] of Object.entries(skill.prerequisites)) {
+      if (Number(incomingSkills.unlocked_skills[prereqId] || 0) < Number(requiredRank)) {
+        return res.status(400).json({ error: `Requires ${prereqId} Rank ${requiredRank}.` });
+      }
+    }
+  }
+  const skills = {
+    available_skill_points: Math.max(0, earned - spentRanks),
+    total_skill_points_earned: earned,
+    unlocked_skills: incomingSkills.unlocked_skills
+  };
 
   const payload = {
     id: user.id,
@@ -214,6 +364,7 @@ app.post('/progress/save', async (req, res) => {
     attack: Number(req.body.attack || 12),
     gold: Number(req.body.gold || 0),
     inventory: Array.isArray(req.body.inventory) ? req.body.inventory : [],
+    skills,
     last_position: req.body.last_position || {},
     last_latitude: req.body.last_latitude ?? null,
     last_longitude: req.body.last_longitude ?? null,
@@ -228,6 +379,43 @@ app.post('/progress/save', async (req, res) => {
 
   if (error) return res.status(500).json({ error: error.message });
   res.json({ ok: true, account: publicAccount(data) });
+});
+
+app.post('/skills/unlock', async (req, res) => {
+  if (!requireSupabase(res)) return;
+  const user = await getUserFromBearer(req);
+  if (!user) return res.status(401).json({ error: 'Invalid or missing access token.' });
+  const skillId = String(req.body.skill_id || '').trim();
+  const { data: profile, error: profileError } = await supabaseAdmin
+    .from('game_accounts')
+    .select('*')
+    .eq('id', user.id)
+    .maybeSingle();
+  if (profileError) return res.status(500).json({ error: profileError.message });
+  if (!profile) return res.status(404).json({ error: 'Account not found.' });
+  const classType = String(profile.character_id || 'viking');
+  const skill = skillDefinition(classType, skillId);
+  if (!skill) return res.status(400).json({ error: 'This skill is not available for your class.' });
+  const state = cleanSkillState(profile.skills);
+  if (state.available_skill_points < 1) return res.status(400).json({ error: 'Not enough skill points.' });
+  if (Number(profile.level || 1) < skill.requiredLevel) return res.status(400).json({ error: `Requires level ${skill.requiredLevel}.` });
+  const currentRank = Number(state.unlocked_skills[skillId] || 0);
+  if (currentRank >= skill.maxRank) return res.status(400).json({ error: 'Skill is already at max rank.' });
+  for (const [prereqId, requiredRank] of Object.entries(skill.prerequisites)) {
+    if (Number(state.unlocked_skills[prereqId] || 0) < Number(requiredRank)) {
+      return res.status(400).json({ error: `Requires ${prereqId} Rank ${requiredRank}.` });
+    }
+  }
+  state.available_skill_points -= 1;
+  state.unlocked_skills[skillId] = currentRank + 1;
+  const { data: updated, error: updateError } = await supabaseAdmin
+    .from('game_accounts')
+    .update({ skills: state, updated_at: new Date().toISOString() })
+    .eq('id', user.id)
+    .select('*')
+    .single();
+  if (updateError) return res.status(500).json({ error: updateError.message });
+  res.json({ ok: true, skills: state, account: publicAccount(updated) });
 });
 
 app.post('/friends/add', async (req, res) => {
@@ -366,17 +554,9 @@ app.post('/clans/create-or-join', async (req, res) => {
 
   if (clanError) return res.status(500).json({ error: clanError.message });
 
-  if (!clan) {
-    const { data: inserted, error: insertError } = await supabaseAdmin
-      .from('clans')
-      .insert({ name, founder_account_id: user.id })
-      .select('*')
-      .single();
-    if (insertError) return res.status(500).json({ error: insertError.message });
-    clan = inserted;
-  }
+  if (!clan) return res.status(404).json({ error: 'Clan not found. Use clan creation with the 10,000 gold cost.' });
 
-  const role = clan.founder_account_id === user.id ? 'Founder' : 'Member';
+  const role = (clan.leader_account_id || clan.founder_account_id) === user.id ? 'Leader' : 'Member';
   const { error: memberError } = await supabaseAdmin.from('clan_members').upsert({
     clan_id: clan.id,
     account_id: user.id,
@@ -385,6 +565,269 @@ app.post('/clans/create-or-join', async (req, res) => {
 
   if (memberError) return res.status(500).json({ error: memberError.message });
   res.json({ ok: true, clan: { id: clan.id, name: clan.name, role } });
+});
+
+app.post('/clans/create', async (req, res) => {
+  if (!requireSupabase(res)) return;
+  const user = await getUserFromBearer(req);
+  if (!user) return res.status(401).json({ error: 'Invalid or missing access token.' });
+
+  const name = cleanClanName(req.body.clan_name);
+  const validationError = validateClanName(name);
+  if (validationError) return res.status(400).json({ error: validationError });
+  const perkType = validPerkType(req.body.perk_type);
+
+  const existingMembership = await clanMembership(user.id);
+  if (existingMembership.clan) return res.status(400).json({ error: 'You are already in a clan.' });
+
+  const { data: profile, error: profileError } = await supabaseAdmin
+    .from('game_accounts')
+    .select('id, player_name, gold')
+    .eq('id', user.id)
+    .maybeSingle();
+  if (profileError) return res.status(500).json({ error: profileError.message });
+  if (!profile) return res.status(404).json({ error: 'Account not found.' });
+  if (Number(profile.gold || 0) < CLAN_CREATE_COST) return res.status(400).json({ error: 'You need 10,000 gold to create a clan.' });
+
+  const { data: existingClan } = await supabaseAdmin.from('clans').select('id').ilike('name', name).maybeSingle();
+  if (existingClan) return res.status(409).json({ error: 'That clan name is already taken.' });
+
+  const { data: clan, error: clanError } = await supabaseAdmin
+    .from('clans')
+    .insert({
+      name,
+      founder_account_id: user.id,
+      leader_account_id: user.id,
+      perk_type: perkType,
+      max_members: MAX_CLAN_MEMBERS
+    })
+    .select('*')
+    .single();
+  if (clanError) return res.status(500).json({ error: clanError.message });
+
+  const { error: memberError } = await supabaseAdmin.from('clan_members').insert({
+    clan_id: clan.id,
+    account_id: user.id,
+    role: 'Leader'
+  });
+  if (memberError) return res.status(500).json({ error: memberError.message });
+
+  const newGold = Number(profile.gold || 0) - CLAN_CREATE_COST;
+  const { error: goldError } = await supabaseAdmin.from('game_accounts').update({ gold: newGold, updated_at: new Date().toISOString() }).eq('id', user.id);
+  if (goldError) return res.status(500).json({ error: goldError.message });
+
+  res.json({ ok: true, clan: await publicClan(clan, 'Leader'), gold: newGold });
+});
+
+app.post('/clans/join', async (req, res) => {
+  if (!requireSupabase(res)) return;
+  const user = await getUserFromBearer(req);
+  if (!user) return res.status(401).json({ error: 'Invalid or missing access token.' });
+  const name = cleanClanName(req.body.clan_name);
+  const validationError = validateClanName(name);
+  if (validationError) return res.status(400).json({ error: validationError });
+
+  const existingMembership = await clanMembership(user.id);
+  if (existingMembership.clan) return res.status(400).json({ error: 'You are already in a clan.' });
+
+  const { data: clan, error: clanError } = await supabaseAdmin.from('clans').select('*').ilike('name', name).maybeSingle();
+  if (clanError) return res.status(500).json({ error: clanError.message });
+  if (!clan) return res.status(404).json({ error: 'Clan not found.' });
+
+  const { count } = await supabaseAdmin.from('clan_members').select('id', { count: 'exact', head: true }).eq('clan_id', clan.id);
+  if ((count || 0) >= (clan.max_members || MAX_CLAN_MEMBERS)) return res.status(400).json({ error: 'This clan is full.' });
+
+  const { error: memberError } = await supabaseAdmin.from('clan_members').insert({
+    clan_id: clan.id,
+    account_id: user.id,
+    role: 'Member'
+  });
+  if (memberError) return res.status(500).json({ error: memberError.message });
+  res.json({ ok: true, clan: await publicClan(clan, 'Member') });
+});
+
+app.post('/clans/leave', async (req, res) => {
+  if (!requireSupabase(res)) return;
+  const user = await getUserFromBearer(req);
+  if (!user) return res.status(401).json({ error: 'Invalid or missing access token.' });
+  const membership = await clanMembership(user.id);
+  if (!membership.clan) return res.status(400).json({ error: 'You are not in a clan.' });
+  if (String(membership.role || '').toLowerCase() === 'leader') return res.status(400).json({ error: 'Leaders must transfer leadership or disband the clan first.' });
+  const { error } = await supabaseAdmin.from('clan_members').delete().eq('account_id', user.id);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true });
+});
+
+app.post('/clans/disband', async (req, res) => {
+  if (!requireSupabase(res)) return;
+  const user = await getUserFromBearer(req);
+  if (!user) return res.status(401).json({ error: 'Invalid or missing access token.' });
+  const membership = await requireClanLeader(user, res);
+  if (!membership) return;
+  const { error } = await supabaseAdmin.from('clans').delete().eq('id', membership.clan.id);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true });
+});
+
+app.post('/clans/war/challenge', async (req, res) => {
+  if (!requireSupabase(res)) return;
+  const user = await getUserFromBearer(req);
+  if (!user) return res.status(401).json({ error: 'Invalid or missing access token.' });
+  const membership = await requireClanLeader(user, res);
+  if (!membership) return;
+  const targetName = cleanClanName(req.body.clan_name);
+  const { data: targetClan } = await supabaseAdmin.from('clans').select('*').ilike('name', targetName).maybeSingle();
+  if (!targetClan) return res.status(404).json({ error: 'Clan not found.' });
+  if (targetClan.id === membership.clan.id) return res.status(400).json({ error: 'A clan cannot wage war against itself.' });
+  const { count } = await supabaseAdmin
+    .from('clan_wars')
+    .select('id', { count: 'exact', head: true })
+    .or(`attacking_clan_id.eq.${membership.clan.id},defending_clan_id.eq.${membership.clan.id}`)
+    .in('status', ['pending', 'accepted', 'active']);
+  if ((count || 0) >= MAX_ACTIVE_WARS) return res.status(400).json({ error: 'This clan has too many active wars.' });
+  const { data: war, error } = await supabaseAdmin.from('clan_wars').insert({
+    attacking_clan_id: membership.clan.id,
+    defending_clan_id: targetClan.id,
+    status: 'pending'
+  }).select('*').single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true, war });
+});
+
+app.post('/clans/war/respond', async (req, res) => {
+  if (!requireSupabase(res)) return;
+  const user = await getUserFromBearer(req);
+  if (!user) return res.status(401).json({ error: 'Invalid or missing access token.' });
+  const membership = await requireClanLeader(user, res);
+  if (!membership) return;
+  const warId = String(req.body.war_id || '');
+  const accepted = Boolean(req.body.accepted);
+  const { data: war } = await supabaseAdmin.from('clan_wars').select('*').eq('id', warId).eq('defending_clan_id', membership.clan.id).maybeSingle();
+  if (!war) return res.status(404).json({ error: 'War challenge not found.' });
+  const status = accepted ? 'accepted' : 'cancelled';
+  const { data: updated, error } = await supabaseAdmin.from('clan_wars').update({
+    status,
+    accepted_at: accepted ? new Date().toISOString() : null
+  }).eq('id', war.id).select('*').single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true, war: updated });
+});
+
+app.post('/clans/battles/schedule', async (req, res) => {
+  if (!requireSupabase(res)) return;
+  const user = await getUserFromBearer(req);
+  if (!user) return res.status(401).json({ error: 'Invalid or missing access token.' });
+  const membership = await requireClanLeader(user, res);
+  if (!membership) return;
+  const warId = String(req.body.war_id || '');
+  const start = new Date(String(req.body.scheduled_start_time || ''));
+  if (Number.isNaN(start.getTime())) return res.status(400).json({ error: 'Valid battle time is required.' });
+  if (start.getTime() < Date.now() + BATTLE_PREP_SECONDS * 1000) return res.status(400).json({ error: 'Battle must be scheduled at least 30 minutes in the future.' });
+  const { data: war } = await supabaseAdmin.from('clan_wars').select('*').eq('id', warId).eq('status', 'accepted').maybeSingle();
+  if (!war) return res.status(404).json({ error: 'Accepted war not found.' });
+  if (![war.attacking_clan_id, war.defending_clan_id].includes(membership.clan.id)) return res.status(403).json({ error: 'Your clan is not in this war.' });
+  const end = new Date(start.getTime() + BATTLE_DURATION_SECONDS * 1000);
+  const { data: battle, error } = await supabaseAdmin.from('clan_battles').insert({
+    war_id: war.id,
+    clan_a_id: war.attacking_clan_id,
+    clan_b_id: war.defending_clan_id,
+    scheduled_start_time: start.toISOString(),
+    end_time: end.toISOString(),
+    created_by_leader_id: user.id
+  }).select('*').single();
+  if (error) return res.status(500).json({ error: error.message });
+  await supabaseAdmin.from('clan_wars').update({ scheduled_battle_id: battle.id }).eq('id', war.id);
+  res.json({ ok: true, battle });
+});
+
+app.post('/clans/battles/join', async (req, res) => {
+  if (!requireSupabase(res)) return;
+  const user = await getUserFromBearer(req);
+  if (!user) return res.status(401).json({ error: 'Invalid or missing access token.' });
+  const battleId = String(req.body.battle_id || '');
+  const membership = await clanMembership(user.id);
+  if (!membership.clan) return res.status(400).json({ error: 'You are not in a clan.' });
+  const { data: battle } = await supabaseAdmin.from('clan_battles').select('*').eq('id', battleId).maybeSingle();
+  if (!battle) return res.status(404).json({ error: 'Battle not found.' });
+  if (![battle.clan_a_id, battle.clan_b_id].includes(membership.clan.id)) return res.status(403).json({ error: 'Only members of the battling clans can join.' });
+  const { data: participant, error } = await supabaseAdmin.from('clan_battle_participants').upsert({
+    battle_id: battle.id,
+    account_id: user.id,
+    clan_id: membership.clan.id
+  }, { onConflict: 'battle_id,account_id' }).select('*').single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true, participant });
+});
+
+app.post('/clans/battles/record-kill', async (req, res) => {
+  if (!requireSupabase(res)) return;
+  const user = await getUserFromBearer(req);
+  if (!user) return res.status(401).json({ error: 'Invalid or missing access token.' });
+  const battleId = String(req.body.battle_id || '');
+  const defeatedAccountId = String(req.body.defeated_account_id || '');
+  const { data: killer } = await supabaseAdmin.from('clan_battle_participants').select('*').eq('battle_id', battleId).eq('account_id', user.id).maybeSingle();
+  const { data: defeated } = await supabaseAdmin.from('clan_battle_participants').select('*').eq('battle_id', battleId).eq('account_id', defeatedAccountId).maybeSingle();
+  if (!killer || !defeated) return res.status(400).json({ error: 'Both players must be battle participants.' });
+  if (killer.clan_id === defeated.clan_id) return res.status(400).json({ error: 'Friendly kills do not score.' });
+  const { data: battle } = await supabaseAdmin.from('clan_battles').select('*').eq('id', battleId).maybeSingle();
+  if (!battle) return res.status(404).json({ error: 'Battle not found.' });
+  await Promise.all([
+    supabaseAdmin.from('clan_battle_participants').update({ kills: Number(killer.kills || 0) + 1 }).eq('id', killer.id),
+    supabaseAdmin.from('clan_battle_participants').update({ deaths: Number(defeated.deaths || 0) + 1 }).eq('id', defeated.id)
+  ]);
+  const scoreColumn = killer.clan_id === battle.clan_a_id ? 'clan_a_score' : 'clan_b_score';
+  const newScore = Number(battle[scoreColumn] || 0) + BATTLE_POINTS_PER_KILL;
+  const { data: updated, error } = await supabaseAdmin.from('clan_battles').update({ [scoreColumn]: newScore }).eq('id', battle.id).select('*').single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true, battle: updated });
+});
+
+app.post('/clans/battles/complete', async (req, res) => {
+  if (!requireSupabase(res)) return;
+  const user = await getUserFromBearer(req);
+  if (!user) return res.status(401).json({ error: 'Invalid or missing access token.' });
+  const battleId = String(req.body.battle_id || '');
+  const { data: battle } = await supabaseAdmin.from('clan_battles').select('*').eq('id', battleId).maybeSingle();
+  if (!battle) return res.status(404).json({ error: 'Battle not found.' });
+  const membership = await requireClanLeader(user, res);
+  if (!membership) return;
+  if (![battle.clan_a_id, battle.clan_b_id].includes(membership.clan.id)) return res.status(403).json({ error: 'Your clan is not in this battle.' });
+  let winningClanId = null;
+  if (Number(battle.clan_a_score || 0) > Number(battle.clan_b_score || 0)) winningClanId = battle.clan_a_id;
+  if (Number(battle.clan_b_score || 0) > Number(battle.clan_a_score || 0)) winningClanId = battle.clan_b_id;
+  const { data: updated, error } = await supabaseAdmin.from('clan_battles').update({
+    status: 'completed',
+    end_time: new Date().toISOString(),
+    winning_clan_id: winningClanId
+  }).eq('id', battle.id).select('*').single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true, battle: updated });
+});
+
+app.post('/clans/battles/claim-reward', async (req, res) => {
+  if (!requireSupabase(res)) return;
+  const user = await getUserFromBearer(req);
+  if (!user) return res.status(401).json({ error: 'Invalid or missing access token.' });
+  const battleId = String(req.body.battle_id || '');
+  const [{ data: battle }, { data: participant }, { data: profile }] = await Promise.all([
+    supabaseAdmin.from('clan_battles').select('*').eq('id', battleId).eq('status', 'completed').maybeSingle(),
+    supabaseAdmin.from('clan_battle_participants').select('*').eq('battle_id', battleId).eq('account_id', user.id).maybeSingle(),
+    supabaseAdmin.from('game_accounts').select('*').eq('id', user.id).maybeSingle()
+  ]);
+  if (!battle) return res.status(400).json({ error: 'Battle is not complete.' });
+  if (!participant) return res.status(403).json({ error: 'Only participants can claim battle rewards.' });
+  if (participant.reward_claimed) return res.status(400).json({ error: 'Battle reward already claimed.' });
+  const won = participant.clan_id === battle.winning_clan_id;
+  const xp = won ? WINNER_XP_REWARD : LOSER_XP_REWARD;
+  const gold = won ? WINNER_GOLD_REWARD : LOSER_GOLD_REWARD;
+  const { data: updatedProfile, error: rewardError } = await supabaseAdmin.from('game_accounts').update({
+    xp: Number(profile?.xp || 0) + xp,
+    gold: Number(profile?.gold || 0) + gold,
+    updated_at: new Date().toISOString()
+  }).eq('id', user.id).select('*').single();
+  if (rewardError) return res.status(500).json({ error: rewardError.message });
+  await supabaseAdmin.from('clan_battle_participants').update({ reward_claimed: true }).eq('id', participant.id);
+  res.json({ ok: true, xp, gold, account: publicAccount(updatedProfile) });
 });
 
 const server = app.listen(PORT, () => {

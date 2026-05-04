@@ -12,6 +12,7 @@ const ChatPanelScript: Script = preload("res://scripts/ChatPanel.gd")
 const AdManagerScript: Script = preload("res://scripts/AdManager.gd")
 const DungeonSpawnerScript: Script = preload("res://scripts/DungeonSpawner.gd")
 const DungeonManagerScript: Script = preload("res://scripts/DungeonManager.gd")
+const SkillTreeMenuScript: Script = preload("res://scripts/SkillTreeMenu.gd")
 
 @onready var player: CharacterBody2D = $Player
 @onready var world_map: Node2D = $WorldMap
@@ -25,6 +26,7 @@ var account_screen: CanvasLayer
 var social_menu: CanvasLayer
 var building_manager: Node2D
 var inventory_menu: CanvasLayer
+var skill_tree_menu: CanvasLayer
 var remote_players_layer: Node2D
 var remote_players: Dictionary = {}
 var mobile_controls: CanvasLayer
@@ -70,6 +72,9 @@ func _process(delta: float) -> void:
 
 	if Input.is_action_just_pressed("inventory_menu") and inventory_menu != null:
 		inventory_menu.call("toggle_visible", "inventory")
+
+	if Input.is_action_just_pressed("skill_tree_menu") and skill_tree_menu != null:
+		skill_tree_menu.call("toggle_visible")
 
 	if Input.is_action_just_pressed("main_menu") and inventory_menu != null:
 		inventory_menu.call("toggle_visible", "equipment")
@@ -155,6 +160,8 @@ func _start_game(account: Dictionary) -> void:
 		hud.menu_pressed.connect(_on_hud_menu_pressed)
 	if account_manager.has_signal("notifications_changed"):
 		account_manager.notifications_changed.connect(_on_notifications_changed)
+	if account_manager.has_signal("social_changed"):
+		account_manager.social_changed.connect(_on_account_social_changed)
 	if world_map.has_signal("gps_changed") and hud.has_method("set_gps"):
 		world_map.gps_changed.connect(hud.set_gps)
 	if world_map.has_signal("section_loading_started"):
@@ -189,6 +196,10 @@ func _start_game(account: Dictionary) -> void:
 	add_child(inventory_menu)
 	inventory_menu.call("setup", player, building_manager, account_manager, hud)
 
+	skill_tree_menu = SkillTreeMenuScript.new()
+	add_child(skill_tree_menu)
+	skill_tree_menu.call("setup", player, hud)
+
 	chat_panel = ChatPanelScript.new()
 	add_child(chat_panel)
 	if chat_panel.has_signal("message_submitted"):
@@ -217,6 +228,12 @@ func _start_game(account: Dictionary) -> void:
 	_ensure_remote_players_layer()
 	network_client.connect_to_server()
 	_save_now("Account loaded. Press M or the Menu button for gear, inventory, crafting, and building.")
+
+
+func _on_account_social_changed(account: Dictionary) -> void:
+	if player != null and player.has_method("set_clan_data"):
+		var clan: Variant = account.get("clan", {})
+		player.call("set_clan_data", clan if clan is Dictionary else {})
 
 
 func _save_now(message: String) -> void:
@@ -256,6 +273,8 @@ func _set_game_visible(is_visible: bool) -> void:
 		building_manager.set_process(is_visible)
 	if inventory_menu != null:
 		inventory_menu.visible = false
+	if skill_tree_menu != null:
+		skill_tree_menu.visible = false
 	if chat_panel != null:
 		chat_panel.visible = is_visible
 	if ad_manager != null and not ad_break_active:
@@ -555,6 +574,7 @@ func _ensure_global_input_actions() -> void:
 	_add_key_action("manual_save", [KEY_F5])
 	_add_key_action("social_menu", [KEY_O])
 	_add_key_action("inventory_menu", [KEY_I])
+	_add_key_action("skill_tree_menu", [KEY_K])
 	_add_key_action("build_menu", [KEY_B])
 	_add_key_action("craft_menu", [KEY_C])
 	_add_key_action("multiplayer_chat", [KEY_ENTER, KEY_T])
