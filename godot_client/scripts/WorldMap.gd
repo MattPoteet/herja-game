@@ -17,10 +17,13 @@ const USER_AGENT: String = "Herja/0.1 Godot prototype"
 # The map only keeps this many OSM tiles loaded at once. When the player crosses
 # into the next section, Herja shows a loading overlay, unloads old tiles, and
 # loads the next section.
-const SECTION_WIDTH_TILES: int = 7
-const SECTION_HEIGHT_TILES: int = 5
+const SECTION_WIDTH_TILES: int = 5
+const SECTION_HEIGHT_TILES: int = 4
 const SECTION_LOAD_SECONDS: float = 1.25
-const SECTION_PRELOAD_BORDER: int = 1
+const SECTION_PRELOAD_BORDER: int = 0
+const MAX_ACTIVE_AREAS: int = 1
+const ACTIVE_AREA_DIAMETER: float = 1024.0
+const ACTIVE_AREA_RADIUS: float = 512.0
 const STRUCTURE_SHEET_PATH: String = "res://art/buildings/buildings_v2.png"
 const STRUCTURE_SIZE: int = 128
 const STRUCTURE_COLUMNS: int = 4
@@ -124,13 +127,31 @@ func section_to_center_world(section: Vector2i) -> Vector2:
 	)
 
 
+func get_active_section() -> Vector2i:
+	return active_section
+
+
+func active_area_rect(section: Vector2i) -> Rect2:
+	var start_tile: Vector2i = section_to_start_tile(section)
+	return Rect2(
+		tile_to_world(start_tile),
+		Vector2(float(SECTION_WIDTH_TILES * TILE_SIZE), float(SECTION_HEIGHT_TILES * TILE_SIZE))
+	)
+
+
+func is_position_in_active_area(world_position: Vector2) -> bool:
+	return active_area_rect(active_section).has_point(world_position)
+
+
 func random_walkable_position() -> Vector2:
-	var center: Vector2 = origin_world_position
-	if player != null:
-		center = player.global_position
-	var angle: float = randf() * TAU
-	var distance: float = randf_range(450.0, 1400.0)
-	return center + Vector2(cos(angle), sin(angle)) * distance
+	var rect: Rect2 = active_area_rect(active_section)
+	var margin: float = 64.0
+	if rect.size.x <= margin * 2.0 or rect.size.y <= margin * 2.0:
+		return rect.get_center()
+	return Vector2(
+		randf_range(rect.position.x + margin, rect.position.x + rect.size.x - margin),
+		randf_range(rect.position.y + margin, rect.position.y + rect.size.y - margin)
+	)
 
 
 func is_walkable(_tile: Vector2i) -> bool:
@@ -241,7 +262,7 @@ func _begin_section_transition(new_section: Vector2i) -> void:
 	loading_section = true
 	active_section = new_section
 	section_loading_started.emit(new_section)
-	_show_loading_overlay("Loading map section...\nEntering region %d, %d" % [new_section.x, new_section.y])
+	_show_loading_overlay("Loading active area...\nRegion %d, %d" % [new_section.x, new_section.y])
 	if player != null:
 		player.set_physics_process(false)
 

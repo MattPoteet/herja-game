@@ -10,6 +10,11 @@ const MAX_ACTIVE_ENEMIES: int = 18
 const INITIAL_ENEMY_COUNT: int = 12
 const ENEMY_RESPAWN_SECONDS: float = 4.5
 const ENEMY_MIN_SPAWN_DISTANCE: float = 180.0
+const ENEMIES_PER_AREA_MIN: int = 8
+const ENEMIES_PER_AREA_MAX: int = 12
+const ENEMY_RESPAWN_ENABLED: bool = true
+const ENEMY_RESPAWN_DELAY_SECONDS: float = 4.5
+const AREA_ENEMY_LEVEL_SCALING: bool = true
 
 const CHARACTER_DAMAGE_MULTIPLIERS: Dictionary = {
 	"viking": 1.0,

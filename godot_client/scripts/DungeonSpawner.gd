@@ -25,15 +25,15 @@ func refresh_around_player() -> void:
 		return
 	_ensure_layer()
 	var active_section: Vector2i = Vector2i.ZERO
-	if world_map.has_method("world_to_section"):
+	if world_map.has_method("get_active_section"):
+		active_section = world_map.call("get_active_section")
+	elif world_map.has_method("world_to_section"):
 		active_section = world_map.call("world_to_section", player.global_position)
+	_cleanup_inactive_entrances(active_section)
 	var spawned: int = _count_near_player()
 	var starting_count: int = spawned
-	for sy in range(active_section.y - 1, active_section.y + 2):
-		for sx in range(active_section.x - 1, active_section.x + 2):
-			if spawned >= DungeonConfig.MAX_ENTRANCES_PER_REFRESH:
-				return
-			spawned += _try_spawn_for_section(Vector2i(sx, sy))
+	if spawned < DungeonConfig.MAX_ENTRANCES_PER_REFRESH:
+		spawned += _try_spawn_for_section(active_section)
 	if starting_count == 0 and _count_near_player() == 0:
 		_try_spawn_for_section(active_section, true)
 
@@ -126,6 +126,17 @@ func _count_near_player() -> int:
 			if (node as Node2D).global_position.distance_to(player.global_position) < 1800.0:
 				count += 1
 	return count
+
+
+func _cleanup_inactive_entrances(active_section: Vector2i) -> void:
+	var active_key: String = "%d:%d" % [active_section.x, active_section.y]
+	for key in entrance_nodes.keys().duplicate():
+		if str(key) == active_key:
+			continue
+		var node: Node = entrance_nodes.get(key, null) as Node
+		if is_instance_valid(node):
+			node.queue_free()
+		entrance_nodes.erase(key)
 
 
 func _far_enough_from_other_entrances(position: Vector2) -> bool:
