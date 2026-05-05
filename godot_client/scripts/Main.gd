@@ -10,6 +10,8 @@ const RemotePlayerScript: Script = preload("res://scripts/RemotePlayer.gd")
 const MobileControlsScript: Script = preload("res://scripts/MobileControls.gd")
 const ChatPanelScript: Script = preload("res://scripts/ChatPanel.gd")
 const AdManagerScript: Script = preload("res://scripts/AdManager.gd")
+const AdMobManagerScript: Script = preload("res://scripts/AdMobManager.gd")
+const MobilePlatform = preload("res://scripts/MobilePlatform.gd")
 const DungeonSpawnerScript: Script = preload("res://scripts/DungeonSpawner.gd")
 const DungeonManagerScript: Script = preload("res://scripts/DungeonManager.gd")
 const SkillTreeMenuScript: Script = preload("res://scripts/SkillTreeMenu.gd")
@@ -32,6 +34,7 @@ var remote_players: Dictionary = {}
 var mobile_controls: CanvasLayer
 var chat_panel: CanvasLayer
 var ad_manager: CanvasLayer
+var admob_manager: Node
 var dungeon_spawner: Node2D
 var dungeon_manager: Node
 var ad_break_active: bool = false
@@ -153,6 +156,7 @@ func _start_game(account: Dictionary) -> void:
 	var loaded: bool = bool(save_manager.call("load_player", player, world_map, account_manager))
 	if not loaded and player.has_method("refresh_after_load"):
 		player.call("refresh_after_load")
+	_apply_mobile_camera()
 
 	spawn_manager.setup(world_map, player)
 	hud.setup(player, account_manager)
@@ -207,12 +211,18 @@ func _start_game(account: Dictionary) -> void:
 
 	ad_manager = AdManagerScript.new()
 	add_child(ad_manager)
+	admob_manager = AdMobManagerScript.new()
+	add_child(admob_manager)
+	if ad_manager.has_method("setup"):
+		ad_manager.call("setup", admob_manager)
 	if ad_manager.has_signal("ad_break_started"):
 		ad_manager.connect("ad_break_started", Callable(self, "_on_ad_break_started"))
 	if ad_manager.has_signal("ad_break_finished"):
 		ad_manager.connect("ad_break_finished", Callable(self, "_on_ad_break_finished"))
 
 	_setup_mobile_controls()
+	if admob_manager != null and admob_manager.has_method("show_banner"):
+		admob_manager.call("show_banner")
 
 	if network_client.has_method("set_account_manager"):
 		network_client.call("set_account_manager", account_manager)
@@ -292,6 +302,14 @@ func _setup_mobile_controls() -> void:
 	mobile_controls.connect("build_pressed", Callable(self, "_on_mobile_build_pressed"))
 	mobile_controls.connect("social_pressed", Callable(self, "_on_mobile_social_pressed"))
 	mobile_controls.connect("save_pressed", Callable(self, "_on_mobile_save_pressed"))
+
+
+func _apply_mobile_camera() -> void:
+	if not MobilePlatform.use_mobile_layout() or player == null:
+		return
+	var camera: Camera2D = player.get_node_or_null("Camera2D") as Camera2D
+	if camera != null:
+		camera.zoom = Vector2(1.05, 1.05)
 
 
 func _on_mobile_move_changed(move_vector: Vector2) -> void:
@@ -511,7 +529,7 @@ func _is_touch_over_mobile_controls(screen_position: Vector2) -> bool:
 
 func _enemy_at_world_position(world_position: Vector2) -> Node2D:
 	var nearest: Node2D = null
-	var nearest_distance: float = TAP_ENEMY_RADIUS
+	var nearest_distance: float = 58.0 if MobilePlatform.use_mobile_layout() else TAP_ENEMY_RADIUS
 	for enemy in get_tree().get_nodes_in_group("enemies"):
 		if not is_instance_valid(enemy) or not enemy is Node2D:
 			continue

@@ -1,6 +1,7 @@
 extends CanvasLayer
 
 const SkillConfig = preload("res://scripts/SkillConfig.gd")
+const MobilePlatform = preload("res://scripts/MobilePlatform.gd")
 
 var player: Node
 var hud: Node
@@ -29,24 +30,30 @@ func toggle_visible() -> void:
 func _build_ui() -> void:
 	layer = 62
 	panel = Panel.new()
-	panel.position = Vector2(450, 54)
-	panel.size = Vector2(430, 620)
+	if MobilePlatform.use_mobile_layout():
+		var viewport: Vector2 = MobilePlatform.viewport_size()
+		var margin: float = MobilePlatform.safe_margin()
+		panel.position = Vector2(margin, margin)
+		panel.size = Vector2(viewport.x - margin * 2.0, viewport.y - margin * 2.0)
+	else:
+		panel.position = Vector2(450, 54)
+		panel.size = Vector2(430, 620)
 	add_child(panel)
 
 	var scroll: ScrollContainer = ScrollContainer.new()
 	scroll.position = Vector2(16, 14)
-	scroll.size = Vector2(398, 592)
+	scroll.size = panel.size - Vector2(32, 28)
 	panel.add_child(scroll)
 
 	var root: VBoxContainer = VBoxContainer.new()
 	root.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	root.add_theme_constant_override("separation", 8)
+	root.add_theme_constant_override("separation", 12 if MobilePlatform.use_mobile_layout() else 8)
 	scroll.add_child(root)
 
 	var title: Label = Label.new()
 	title.text = "Skill Tree"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 24)
+	title.add_theme_font_size_override("font_size", 30 if MobilePlatform.use_mobile_layout() else 24)
 	root.add_child(title)
 
 	class_label = Label.new()
@@ -54,7 +61,7 @@ func _build_ui() -> void:
 	root.add_child(class_label)
 
 	points_label = Label.new()
-	points_label.add_theme_font_size_override("font_size", 16)
+	points_label.add_theme_font_size_override("font_size", 18 if MobilePlatform.use_mobile_layout() else 16)
 	root.add_child(points_label)
 
 	var respec_button: Button = Button.new()

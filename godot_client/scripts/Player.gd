@@ -10,6 +10,7 @@ signal skills_changed(skill_state: Dictionary)
 const Balance = preload("res://scripts/Balance.gd")
 const ClanConfig = preload("res://scripts/ClanConfig.gd")
 const SkillConfig = preload("res://scripts/SkillConfig.gd")
+const MobilePlatform = preload("res://scripts/MobilePlatform.gd")
 const SPEED: float = 135.0
 const BOW_SHOT_VISIBLE_SECONDS: float = 0.16
 const FIREBALL_VISIBLE_SECONDS: float = 0.24
@@ -26,6 +27,7 @@ const MAGE_ATTACK_PATH: String = "res://art/characters/mage/mage_attack.png"
 const SPRITE_COLUMNS: int = 4
 const SPRITE_ROWS: int = 4
 const SPRITE_SCALE: Vector2 = Vector2(0.18, 0.18)
+const MOBILE_SPRITE_SCALE: Vector2 = Vector2(0.22, 0.22)
 
 var stats: Dictionary = {
 	"name": "Viking",
@@ -769,7 +771,7 @@ func _setup_player_visuals() -> void:
 		add_child(animated_sprite)
 	animated_sprite.centered = true
 	animated_sprite.position = Vector2(0, -24)
-	animated_sprite.scale = SPRITE_SCALE
+	animated_sprite.scale = MOBILE_SPRITE_SCALE if MobilePlatform.use_mobile_layout() else SPRITE_SCALE
 	animated_sprite.z_index = 10
 	var sprite_frames: SpriteFrames = _build_character_sprite_frames()
 	if sprite_frames != null:
@@ -800,7 +802,8 @@ func _setup_name_label() -> void:
 		name_label.name = "NameLabel"
 		add_child(name_label)
 	name_label.text = str(stats["name"])
-	name_label.position = Vector2(-30, -68)
+	name_label.position = Vector2(-36, -76) if MobilePlatform.use_mobile_layout() else Vector2(-30, -68)
+	name_label.add_theme_font_size_override("font_size", 14 if MobilePlatform.use_mobile_layout() else 12)
 	name_label.z_index = 20
 
 

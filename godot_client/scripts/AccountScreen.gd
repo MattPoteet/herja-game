@@ -2,6 +2,8 @@ extends CanvasLayer
 
 signal account_ready(account: Dictionary)
 
+const MobilePlatform = preload("res://scripts/MobilePlatform.gd")
+
 var account_manager
 
 var mode: String = "login"
@@ -42,6 +44,10 @@ func _build_ui() -> void:
 	root.anchor_right = 1.0
 	root.anchor_bottom = 1.0
 	add_child(root)
+
+	if MobilePlatform.use_mobile_layout():
+		_build_mobile_ui(root)
+		return
 
 	var brand_box: VBoxContainer = VBoxContainer.new()
 	brand_box.position = Vector2(118, 92)
@@ -174,6 +180,133 @@ func _build_ui() -> void:
 	note_panel.add_child(note_label)
 
 
+func _build_mobile_ui(root: Control) -> void:
+	var viewport: Vector2 = MobilePlatform.viewport_size()
+	var margin: float = MobilePlatform.safe_margin()
+
+	var art_glow: ColorRect = ColorRect.new()
+	art_glow.anchor_right = 1.0
+	art_glow.anchor_bottom = 1.0
+	art_glow.color = Color(0.09, 0.12, 0.17, 0.40)
+	root.add_child(art_glow)
+
+	var scroll: ScrollContainer = ScrollContainer.new()
+	scroll.anchor_right = 1.0
+	scroll.anchor_bottom = 1.0
+	scroll.offset_left = margin
+	scroll.offset_top = margin
+	scroll.offset_right = -margin
+	scroll.offset_bottom = -margin
+	root.add_child(scroll)
+
+	var content: VBoxContainer = VBoxContainer.new()
+	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	content.add_theme_constant_override("separation", 14)
+	scroll.add_child(content)
+
+	var title: Label = Label.new()
+	title.text = "HERJA"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 54)
+	title.add_theme_color_override("font_color", Color(0.98, 0.90, 0.58))
+	content.add_child(title)
+
+	var subtitle: Label = Label.new()
+	subtitle.text = "Viking GPS RPG"
+	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	subtitle.add_theme_font_size_override("font_size", 20)
+	subtitle.add_theme_color_override("font_color", Color(0.78, 0.86, 0.96))
+	content.add_child(subtitle)
+
+	var card: Panel = Panel.new()
+	card.custom_minimum_size = Vector2(0, max(560.0, viewport.y - 150.0))
+	card.add_theme_stylebox_override("panel", _panel_style(Color(0.08, 0.10, 0.15, 0.96), Color(0.66, 0.52, 0.28), 18))
+	content.add_child(card)
+
+	var card_contents: VBoxContainer = VBoxContainer.new()
+	card_contents.position = Vector2(18, 18)
+	card_contents.size = Vector2(max(280.0, viewport.x - margin * 2.0 - 36.0), card.custom_minimum_size.y - 36.0)
+	card_contents.add_theme_constant_override("separation", 12)
+	card.add_child(card_contents)
+
+	form_title_label = Label.new()
+	form_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	form_title_label.add_theme_font_size_override("font_size", 30)
+	form_title_label.add_theme_color_override("font_color", Color(0.97, 0.97, 0.98))
+	card_contents.add_child(form_title_label)
+
+	var help_label: Label = Label.new()
+	help_label.text = "Sign in or create your Herja account to keep saves, inventory, friends, clans, dungeons, and skills synced."
+	help_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	help_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	help_label.add_theme_font_size_override("font_size", 15)
+	help_label.add_theme_color_override("font_color", Color(0.80, 0.85, 0.92))
+	card_contents.add_child(help_label)
+
+	email_input = _make_line_edit("Email address")
+	card_contents.add_child(_labeled("Email", email_input))
+
+	password_input = _make_line_edit("Password")
+	password_input.secret = true
+	card_contents.add_child(_labeled("Password", password_input))
+
+	player_name_input = _make_line_edit("Player name")
+	player_name_wrap = _labeled("Player Name", player_name_input)
+	card_contents.add_child(player_name_wrap)
+
+	character_select = OptionButton.new()
+	character_select.custom_minimum_size = Vector2(0, MobilePlatform.touch_target())
+	character_select.add_theme_stylebox_override("normal", _input_style())
+	character_select.add_theme_stylebox_override("hover", _input_style(Color(0.14, 0.17, 0.24), Color(0.50, 0.62, 0.85)))
+	character_select.add_item("Viking", 0)
+	character_select.set_item_metadata(0, "viking")
+	character_select.add_item("Shield Maiden", 1)
+	character_select.set_item_metadata(1, "shield_maiden")
+	character_select.add_item("Druid", 2)
+	character_select.set_item_metadata(2, "druid")
+	character_select.add_item("Mage", 3)
+	character_select.set_item_metadata(3, "mage")
+	character_wrap = _labeled("Character", character_select)
+	card_contents.add_child(character_wrap)
+
+	primary_button = Button.new()
+	primary_button.custom_minimum_size = Vector2(0, 60)
+	_primary_button_style(primary_button)
+	primary_button.add_theme_font_size_override("font_size", 19)
+	primary_button.pressed.connect(_on_primary_pressed)
+	card_contents.add_child(primary_button)
+
+	mode_switch_button = Button.new()
+	mode_switch_button.flat = true
+	mode_switch_button.custom_minimum_size = Vector2(0, 52)
+	mode_switch_button.add_theme_font_size_override("font_size", 16)
+	mode_switch_button.add_theme_color_override("font_color", Color(0.68, 0.82, 1.0))
+	mode_switch_button.pressed.connect(_on_switch_mode_pressed)
+	card_contents.add_child(mode_switch_button)
+
+	continue_button = Button.new()
+	continue_button.text = "Continue Last"
+	_secondary_button_style(continue_button)
+	continue_button.custom_minimum_size = Vector2(0, 54)
+	continue_button.pressed.connect(_on_continue_pressed)
+	card_contents.add_child(continue_button)
+
+	var guest_button: Button = Button.new()
+	guest_button.text = "Offline Guest"
+	_secondary_button_style(guest_button)
+	guest_button.custom_minimum_size = Vector2(0, 54)
+	guest_button.pressed.connect(_on_guest_pressed)
+	card_contents.add_child(guest_button)
+
+	status_label = Label.new()
+	status_label.text = "Enter your email and password to continue."
+	status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	status_label.add_theme_font_size_override("font_size", 15)
+	status_label.add_theme_color_override("font_color", Color(0.90, 0.85, 0.58))
+	card_contents.add_child(status_label)
+
+
 func _panel_style(bg: Color, border: Color, radius: int) -> StyleBoxFlat:
 	var style: StyleBoxFlat = StyleBoxFlat.new()
 	style.bg_color = bg
@@ -196,10 +329,11 @@ func _input_style(bg: Color = Color(0.11, 0.14, 0.20), border: Color = Color(0.2
 func _make_line_edit(placeholder: String) -> LineEdit:
 	var input: LineEdit = LineEdit.new()
 	input.placeholder_text = placeholder
-	input.custom_minimum_size = Vector2(0, 42)
+	input.custom_minimum_size = Vector2(0, MobilePlatform.touch_target() if MobilePlatform.use_mobile_layout() else 42)
 	input.add_theme_stylebox_override("normal", _input_style())
 	input.add_theme_stylebox_override("focus", _input_style(Color(0.14, 0.17, 0.24), Color(0.56, 0.70, 0.94)))
 	input.add_theme_stylebox_override("read_only", _input_style())
+	input.add_theme_font_size_override("font_size", 16 if MobilePlatform.use_mobile_layout() else 14)
 	input.add_theme_color_override("font_color", Color(0.96, 0.96, 0.98))
 	input.add_theme_color_override("font_placeholder_color", Color(0.55, 0.60, 0.69))
 	return input
@@ -210,6 +344,7 @@ func _labeled(label_text: String, control: Control) -> VBoxContainer:
 	wrap.add_theme_constant_override("separation", 4)
 	var label: Label = Label.new()
 	label.text = label_text
+	label.add_theme_font_size_override("font_size", 15 if MobilePlatform.use_mobile_layout() else 14)
 	label.add_theme_color_override("font_color", Color(0.82, 0.86, 0.92))
 	wrap.add_child(label)
 	wrap.add_child(control)

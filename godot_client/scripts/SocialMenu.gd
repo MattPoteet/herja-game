@@ -2,6 +2,7 @@ extends CanvasLayer
 
 signal admin_teleport_requested(player_name: String)
 const ClanConfig = preload("res://scripts/ClanConfig.gd")
+const MobilePlatform = preload("res://scripts/MobilePlatform.gd")
 
 var account_manager: Node
 var player: Node
@@ -44,24 +45,30 @@ func toggle_visible() -> void:
 func _build_ui() -> void:
 	layer = 60
 	panel = Panel.new()
-	panel.position = Vector2(820, 70)
-	panel.size = Vector2(420, 620)
+	if MobilePlatform.use_mobile_layout():
+		var viewport: Vector2 = MobilePlatform.viewport_size()
+		var margin: float = MobilePlatform.safe_margin()
+		panel.position = Vector2(margin, margin)
+		panel.size = Vector2(viewport.x - margin * 2.0, viewport.y - margin * 2.0)
+	else:
+		panel.position = Vector2(820, 70)
+		panel.size = Vector2(420, 620)
 	add_child(panel)
 
 	var scroll: ScrollContainer = ScrollContainer.new()
 	scroll.position = Vector2(18, 16)
-	scroll.size = Vector2(384, 588)
+	scroll.size = panel.size - Vector2(36, 32)
 	panel.add_child(scroll)
 
 	var box: VBoxContainer = VBoxContainer.new()
 	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	box.add_theme_constant_override("separation", 6)
+	box.add_theme_constant_override("separation", 10 if MobilePlatform.use_mobile_layout() else 6)
 	scroll.add_child(box)
 
 	title_label = Label.new()
 	title_label.text = "Social"
 	title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title_label.add_theme_font_size_override("font_size", 24)
+	title_label.add_theme_font_size_override("font_size", 30 if MobilePlatform.use_mobile_layout() else 24)
 	box.add_child(title_label)
 
 	profile_label = Label.new()

@@ -4,6 +4,8 @@ signal gps_changed(latitude: float, longitude: float, zoom: int)
 signal section_loading_started(section: Vector2i)
 signal section_loading_finished(section: Vector2i)
 
+const MobilePlatform = preload("res://scripts/MobilePlatform.gd")
+
 # Free prototype map tiles. For public production, use your own tile server or a
 # provider plan that allows your traffic volume.
 const TILE_SIZE: int = 256
@@ -227,18 +229,24 @@ func _ensure_loading_overlay() -> void:
 	loading_layer.add_child(dim)
 
 	loading_panel = Panel.new()
-	loading_panel.position = Vector2(430, 276)
-	loading_panel.size = Vector2(420, 130)
+	if MobilePlatform.use_mobile_layout():
+		var viewport: Vector2 = MobilePlatform.viewport_size()
+		var margin: float = MobilePlatform.safe_margin()
+		loading_panel.position = Vector2(margin, max(margin, viewport.y * 0.36))
+		loading_panel.size = Vector2(viewport.x - margin * 2.0, 156)
+	else:
+		loading_panel.position = Vector2(430, 276)
+		loading_panel.size = Vector2(420, 130)
 	loading_panel.add_theme_stylebox_override("panel", _panel_style(Color(0.08, 0.10, 0.14, 0.97), Color(0.56, 0.45, 0.24), 16))
 	loading_layer.add_child(loading_panel)
 
 	loading_label = Label.new()
 	loading_label.position = Vector2(24, 24)
-	loading_label.size = Vector2(372, 82)
+	loading_label.size = loading_panel.size - Vector2(48, 48)
 	loading_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	loading_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	loading_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	loading_label.add_theme_font_size_override("font_size", 22)
+	loading_label.add_theme_font_size_override("font_size", 26 if MobilePlatform.use_mobile_layout() else 22)
 	loading_label.add_theme_color_override("font_color", Color(0.96, 0.92, 0.74))
 	loading_panel.add_child(loading_label)
 
@@ -458,15 +466,15 @@ func _make_structure_marker(type_name: String) -> Node2D:
 	sprite.texture = _get_map_structure_texture(type_name)
 	sprite.centered = true
 	sprite.position = Vector2(0, -8)
-	sprite.scale = Vector2(0.38, 0.38)
+	sprite.scale = Vector2(0.50, 0.50) if MobilePlatform.use_mobile_layout() else Vector2(0.38, 0.38)
 	sprite.z_index = 2
 	marker.add_child(sprite)
 
 	var label: Label = Label.new()
 	label.text = type_name
-	label.position = Vector2(-36, 13)
-	label.size = Vector2(120, 20)
-	label.add_theme_font_size_override("font_size", 11)
+	label.position = Vector2(-48, 16) if MobilePlatform.use_mobile_layout() else Vector2(-36, 13)
+	label.size = Vector2(140, 28) if MobilePlatform.use_mobile_layout() else Vector2(120, 20)
+	label.add_theme_font_size_override("font_size", 13 if MobilePlatform.use_mobile_layout() else 11)
 	label.add_theme_color_override("font_color", Color(0.95, 0.88, 0.68))
 	label.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0))
 	label.add_theme_constant_override("shadow_offset_x", 1)

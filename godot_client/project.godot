@@ -26,6 +26,20 @@ window/size/viewport_height=720
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 
+[herja_ads]
+
+admob_enabled=true
+admob_test_mode=false
+admob_android_app_id="ca-app-pub-1019842095728273~4129909747"
+admob_android_banner_id=""
+admob_android_interstitial_id="ca-app-pub-1019842095728273/2164108458"
+admob_android_rewarded_id=""
+admob_ios_app_id=""
+admob_ios_banner_id=""
+admob_ios_interstitial_id=""
+admob_ios_rewarded_id=""
+admob_interstitial_every_n_loads=10
+
 [rendering]
 
 textures/canvas_textures/default_texture_filter=0

@@ -4,6 +4,7 @@ signal defeated(enemy: Node)
 
 const Balance = preload("res://scripts/Balance.gd")
 const DungeonConfig = preload("res://scripts/DungeonConfig.gd")
+const MobilePlatform = preload("res://scripts/MobilePlatform.gd")
 const ENEMY_SHEET_PATH: String = "res://art/enemies/enemies.png"
 const ITEM_DROP_SCENE_PATH: String = "res://scenes/ItemDrop.tscn"
 const FRAME_SIZE: int = 64
@@ -251,7 +252,7 @@ func _setup_enemy_visuals() -> void:
 	animated_sprite.centered = true
 	animated_sprite.position = Vector2(0, -6)
 	animated_sprite.z_index = 8
-	animated_sprite.scale = Vector2.ONE * _visual_scale()
+	animated_sprite.scale = Vector2.ONE * _visual_scale() * (1.16 if MobilePlatform.use_mobile_layout() else 1.0)
 	animated_sprite.sprite_frames = _build_enemy_sprite_frames()
 	animated_sprite.play("idle_down")
 
@@ -262,7 +263,8 @@ func _setup_enemy_visuals() -> void:
 		add_child(name_label)
 
 	name_label.text = display_name if display_name != "" else enemy_name
-	name_label.position = Vector2(-36, -48)
+	name_label.position = Vector2(-44, -58) if MobilePlatform.use_mobile_layout() else Vector2(-36, -48)
+	name_label.add_theme_font_size_override("font_size", 13 if MobilePlatform.use_mobile_layout() else 12)
 	name_label.z_index = 12
 
 	health_bar = get_node_or_null("HealthBar") as ProgressBar
@@ -270,8 +272,8 @@ func _setup_enemy_visuals() -> void:
 		health_bar = ProgressBar.new()
 		health_bar.name = "HealthBar"
 		add_child(health_bar)
-	health_bar.position = Vector2(-30, -30)
-	health_bar.size = Vector2(60, 7)
+	health_bar.position = Vector2(-38, -36) if MobilePlatform.use_mobile_layout() else Vector2(-30, -30)
+	health_bar.size = Vector2(76, 9) if MobilePlatform.use_mobile_layout() else Vector2(60, 7)
 	health_bar.show_percentage = false
 	health_bar.z_index = 14
 	health_bar.add_theme_stylebox_override("background", _bar_style(Color(0.08, 0.05, 0.04, 0.88), 3))
@@ -288,7 +290,7 @@ func _setup_collision() -> void:
 		add_child(collision)
 
 	var shape: CircleShape2D = CircleShape2D.new()
-	shape.radius = 18.0
+	shape.radius = 28.0 if MobilePlatform.use_mobile_layout() else 18.0
 	collision.shape = shape
 
 

@@ -1,6 +1,7 @@
 extends Area2D
 
 const Balance = preload("res://scripts/Balance.gd")
+const MobilePlatform = preload("res://scripts/MobilePlatform.gd")
 const ITEM_SHEET_PATH: String = "res://art/items/items.png"
 const GEAR_SHEET_PATH: String = "res://art/items/gear_v2.png"
 const ITEM_SIZE: int = 64
@@ -49,7 +50,8 @@ func _process(_delta: float) -> void:
 	if target == null:
 		return
 
-	if global_position.distance_to(target.global_position) <= 34.0:
+	var pickup_radius: float = 48.0 if MobilePlatform.use_mobile_layout() else 34.0
+	if global_position.distance_to(target.global_position) <= pickup_radius:
 		if target.has_method("add_item"):
 			target.call("add_item", item_name)
 		queue_free()
@@ -67,6 +69,7 @@ func _setup_visuals() -> void:
 	sprite.texture = _get_item_texture(item_name)
 	sprite.centered = true
 	sprite.z_index = 9
+	sprite.scale = Vector2.ONE * (1.22 if MobilePlatform.use_mobile_layout() else 1.0)
 
 	name_label = get_node_or_null("NameLabel") as Label
 	if name_label == null:
@@ -75,7 +78,8 @@ func _setup_visuals() -> void:
 		add_child(name_label)
 
 	name_label.text = item_name
-	name_label.position = Vector2(-30, -42)
+	name_label.position = Vector2(-38, -52) if MobilePlatform.use_mobile_layout() else Vector2(-30, -42)
+	name_label.add_theme_font_size_override("font_size", 13 if MobilePlatform.use_mobile_layout() else 12)
 	name_label.z_index = 13
 
 
@@ -87,7 +91,7 @@ func _setup_collision() -> void:
 		add_child(collision)
 
 	var shape: CircleShape2D = CircleShape2D.new()
-	shape.radius = 18.0
+	shape.radius = 26.0 if MobilePlatform.use_mobile_layout() else 18.0
 	collision.shape = shape
 
 

@@ -1,6 +1,7 @@
 extends CanvasLayer
 
 const Balance = preload("res://scripts/Balance.gd")
+const MobilePlatform = preload("res://scripts/MobilePlatform.gd")
 
 const POTION_RECIPES: Dictionary = {
 	"Health Potion": {
@@ -82,15 +83,21 @@ func _build_ui() -> void:
 	add_child(dim)
 
 	panel = Panel.new()
-	panel.position = Vector2(195, 54)
-	panel.size = Vector2(890, 615)
+	if MobilePlatform.use_mobile_layout():
+		var viewport: Vector2 = MobilePlatform.viewport_size()
+		var margin: float = MobilePlatform.safe_margin()
+		panel.position = Vector2(margin, margin)
+		panel.size = Vector2(viewport.x - margin * 2.0, viewport.y - margin * 2.0)
+	else:
+		panel.position = Vector2(195, 54)
+		panel.size = Vector2(890, 615)
 	panel.add_theme_stylebox_override("panel", _panel_style(Color(0.08, 0.10, 0.14, 0.98), Color(0.28, 0.33, 0.43), 18))
 	add_child(panel)
 
 	var root: VBoxContainer = VBoxContainer.new()
 	root.position = Vector2(22, 18)
-	root.size = Vector2(846, 578)
-	root.add_theme_constant_override("separation", 10)
+	root.size = panel.size - Vector2(44, 37)
+	root.add_theme_constant_override("separation", 12 if MobilePlatform.use_mobile_layout() else 10)
 	panel.add_child(root)
 
 	var header: HBoxContainer = HBoxContainer.new()
@@ -99,7 +106,7 @@ func _build_ui() -> void:
 
 	title_label = Label.new()
 	title_label.text = "Herja"
-	title_label.add_theme_font_size_override("font_size", 30)
+	title_label.add_theme_font_size_override("font_size", 32 if MobilePlatform.use_mobile_layout() else 30)
 	title_label.add_theme_color_override("font_color", Color(0.96, 0.92, 0.74))
 	header.add_child(title_label)
 

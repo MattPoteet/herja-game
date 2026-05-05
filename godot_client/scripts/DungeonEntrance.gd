@@ -1,6 +1,7 @@
 extends Node2D
 
 const DungeonConfig = preload("res://scripts/DungeonConfig.gd")
+const MobilePlatform = preload("res://scripts/MobilePlatform.gd")
 
 var required_level: int = DungeonConfig.MIN_DUNGEON_LEVEL
 var label: Label
@@ -36,6 +37,8 @@ func _build_marker() -> void:
 		child.queue_free()
 
 	z_index = 18
+	var mobile_scale: float = 1.22 if MobilePlatform.use_mobile_layout() else 1.0
+	scale = Vector2.ONE * mobile_scale
 
 	var shadow: Polygon2D = Polygon2D.new()
 	shadow.polygon = PackedVector2Array([
@@ -104,7 +107,7 @@ func _build_marker() -> void:
 	rune.position = Vector2(-24, -18)
 	rune.size = Vector2(48, 24)
 	rune.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	rune.add_theme_font_size_override("font_size", 15)
+	rune.add_theme_font_size_override("font_size", 17 if MobilePlatform.use_mobile_layout() else 15)
 	rune.add_theme_color_override("font_color", Color(0.95, 0.87, 0.48))
 	rune.add_theme_color_override("font_shadow_color", Color.BLACK)
 	rune.add_theme_constant_override("shadow_offset_x", 1)
@@ -118,7 +121,7 @@ func _build_marker() -> void:
 	label.size = Vector2(164, 34)
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	label.add_theme_font_size_override("font_size", 12)
+	label.add_theme_font_size_override("font_size", 14 if MobilePlatform.use_mobile_layout() else 12)
 	label.add_theme_color_override("font_color", Color(0.98, 0.91, 0.62))
 	label.add_theme_color_override("font_shadow_color", Color.BLACK)
 	label.add_theme_constant_override("shadow_offset_x", 1)
